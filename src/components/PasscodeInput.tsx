@@ -8,6 +8,7 @@ interface PasscodeInputProps {
   error?: string | null;
   remainingAttempts?: number;
   lockoutSeconds?: number;
+  placeholder?: string;
 }
 
 export function PasscodeInput({
@@ -16,6 +17,7 @@ export function PasscodeInput({
   error,
   remainingAttempts,
   lockoutSeconds,
+  placeholder = "Enter passcode",
 }: PasscodeInputProps) {
   const [passcode, setPasscode] = useState('');
   const [showPasscode, setShowPasscode] = useState(false);
@@ -51,7 +53,7 @@ export function PasscodeInput({
           type={showPasscode ? 'text' : 'password'}
           value={passcode}
           onChange={(e) => setPasscode(e.target.value)}
-          placeholder="Enter passcode"
+          placeholder={placeholder}
           className={`
             input input-lg text-center font-medium
             ${error ? 'input-error animate-shake' : ''}

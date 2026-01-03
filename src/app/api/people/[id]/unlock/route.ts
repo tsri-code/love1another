@@ -1,12 +1,16 @@
 import { NextResponse } from 'next/server';
-import { getPersonById, createSession, isRateLimited, recordFailedAttempt, resetRateLimit } from '@/lib/db';
-import { verifyPasscode, generateSessionToken } from '@/lib/crypto';
+import { getPersonById, createSession, isRateLimited, recordFailedAttempt, resetRateLimit, getMasterSettings } from '@/lib/db';
+import { verifyPasscode, generateSessionToken, decryptStoredPasscode } from '@/lib/crypto';
 import { setSessionCookie } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * POST /api/people/[id]/unlock - Unlock access to a person's prayers
+ * 
+ * Accepts either:
+ * - { passcode: string } - the person's individual passcode
+ * - { passcode: string, useMaster: true } - the master passcode (returns person's passcode for decryption)
  */
 export async function POST(
   request: Request,
@@ -40,7 +44,7 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { passcode } = body;
+    const { passcode, useMaster } = body;
 
     if (!passcode || typeof passcode !== 'string') {
       return NextResponse.json(
@@ -49,8 +53,31 @@ export async function POST(
       );
     }
 
-    // Verify passcode
-    const isValid = await verifyPasscode(passcode, person.passcodeHash);
+    let isValid = false;
+    let personPasscode: string | null = null;
+
+    if (useMaster) {
+      // Try to verify against master passcode
+      const masterSettings = await getMasterSettings();
+      if (masterSettings) {
+        isValid = await verifyPasscode(passcode, masterSettings.masterPasscodeHash);
+        if (isValid && person.passcodeEncrypted) {
+          // Decrypt the person's passcode so it can be used for prayer decryption
+          try {
+            personPasscode = decryptStoredPasscode(person.passcodeEncrypted);
+          } catch {
+            // If we can't decrypt, the unlock still succeeds but we won't have the passcode
+            console.error('Failed to decrypt person passcode with master unlock');
+          }
+        }
+      }
+    } else {
+      // Verify against person's individual passcode
+      isValid = await verifyPasscode(passcode, person.passcodeHash);
+      if (isValid) {
+        personPasscode = passcode; // They entered the correct passcode, so we have it
+      }
+    }
 
     if (!isValid) {
       // Record failed attempt
@@ -85,7 +112,9 @@ export async function POST(
 
     return NextResponse.json({ 
       success: true,
-      personId: id
+      personId: id,
+      // Return the person's passcode if we have it (needed for prayer decryption)
+      passcode: personPasscode,
     });
   } catch (error) {
     console.error('Error unlocking person:', error);

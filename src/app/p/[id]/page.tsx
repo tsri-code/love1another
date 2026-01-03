@@ -25,120 +25,24 @@ export default function PersonGatePage({ params }: { params: Promise<{ id: strin
   const [error, setError] = useState<string | null>(null);
   const [remainingAttempts, setRemainingAttempts] = useState<number | undefined>();
   const [lockoutSeconds, setLockoutSeconds] = useState<number | undefined>();
-  const [hasTouchId, setHasTouchId] = useState(false);
-  const [isTouchIdLoading, setIsTouchIdLoading] = useState(false);
+  const [useMaster, setUseMaster] = useState(false);
+  const [hasMasterPasscode, setHasMasterPasscode] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
     fetchPerson();
-    checkTouchIdAvailability();
+    checkMasterPasscode();
   }, [id]);
 
-  const checkTouchIdAvailability = async () => {
+  const checkMasterPasscode = async () => {
     try {
-      // Check if WebAuthn is supported
-      if (!window.PublicKeyCredential) return;
-      
-      // Check if platform authenticator is available
-      const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
-      if (!available) return;
-      
-      // Check if credentials are registered (via GET request to biometric endpoint)
-      const res = await fetch(`/api/people/${id}/biometric`);
+      const res = await fetch('/api/passwords/setup');
       if (res.ok) {
-        setHasTouchId(true);
+        const data = await res.json();
+        setHasMasterPasscode(data.isSetUp);
       }
     } catch {
-      // Touch ID not available, that's okay
-    }
-  };
-
-  const handleTouchIdUnlock = async () => {
-    setIsTouchIdLoading(true);
-    setError(null);
-
-    try {
-      // Get authentication options
-      const optionsRes = await fetch(`/api/people/${id}/biometric`);
-      if (!optionsRes.ok) {
-        const data = await optionsRes.json();
-        throw new Error(data.error || 'Failed to get Touch ID options');
-      }
-      
-      const { challengeId, options } = await optionsRes.json();
-      
-      // Convert challenge from base64url to ArrayBuffer
-      const challengeBuffer = Uint8Array.from(
-        atob(options.challenge.replace(/-/g, '+').replace(/_/g, '/')),
-        c => c.charCodeAt(0)
-      );
-      
-      // Convert allowCredentials
-      const allowCredentials = options.allowCredentials.map((cred: { id: string; type: string; transports: string[] }) => ({
-        ...cred,
-        id: Uint8Array.from(
-          atob(cred.id.replace(/-/g, '+').replace(/_/g, '/')),
-          c => c.charCodeAt(0)
-        ),
-      }));
-      
-      // Request authentication
-      const credential = await navigator.credentials.get({
-        publicKey: {
-          ...options,
-          challenge: challengeBuffer,
-          allowCredentials,
-        },
-      }) as PublicKeyCredential;
-      
-      if (!credential) {
-        throw new Error('Touch ID authentication was cancelled');
-      }
-      
-      // Send credential to server for verification
-      const authRes = await fetch(`/api/people/${id}/biometric`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          challengeId,
-          credential: {
-            id: credential.id,
-            rawId: btoa(String.fromCharCode(...new Uint8Array(credential.rawId))),
-            type: credential.type,
-            response: {
-              authenticatorData: btoa(String.fromCharCode(...new Uint8Array((credential.response as AuthenticatorAssertionResponse).authenticatorData))),
-              clientDataJSON: btoa(String.fromCharCode(...new Uint8Array(credential.response.clientDataJSON))),
-              signature: btoa(String.fromCharCode(...new Uint8Array((credential.response as AuthenticatorAssertionResponse).signature))),
-            },
-          },
-        }),
-      });
-      
-      const authData = await authRes.json();
-      
-      if (!authRes.ok) {
-        throw new Error(authData.error || 'Touch ID verification failed');
-      }
-      
-      // Now we need to create a session by calling the unlock endpoint with the passcode
-      const unlockRes = await fetch(`/api/people/${id}/unlock`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ passcode: authData.passcode }),
-      });
-      
-      if (!unlockRes.ok) {
-        throw new Error('Failed to create session');
-      }
-      
-      // Success! Store passcode and redirect
-      sessionStorage.setItem(`passcode_${id}`, authData.passcode);
-      router.push(`/p/${id}/prayers`);
-    } catch (err) {
-      console.error('Touch ID error:', err);
-      setError(err instanceof Error ? err.message : 'Touch ID failed. Please use passcode.');
-    } finally {
-      setIsTouchIdLoading(false);
+      // Master passcode not available
     }
   };
 
@@ -183,7 +87,10 @@ export default function PersonGatePage({ params }: { params: Promise<{ id: strin
       const res = await fetch(`/api/people/${id}/unlock`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ passcode }),
+        body: JSON.stringify({ 
+          passcode,
+          useMaster: useMaster, 
+        }),
       });
 
       const data = await res.json();
@@ -197,8 +104,10 @@ export default function PersonGatePage({ params }: { params: Promise<{ id: strin
         return;
       }
 
-      // Success - store passcode for prayer operations and redirect
-      sessionStorage.setItem(`passcode_${id}`, passcode);
+      // Success - store the actual person's passcode (returned from API when using master)
+      // This is needed for prayer decryption
+      const actualPasscode = data.passcode || passcode;
+      sessionStorage.setItem(`passcode_${id}`, actualPasscode);
       router.push(`/p/${id}/prayers`);
     } catch (error) {
       console.error('Error unlocking:', error);
@@ -230,9 +139,9 @@ export default function PersonGatePage({ params }: { params: Promise<{ id: strin
   }
 
   return (
-    <div className="page-center">
+    <div className="lock-screen">
       <div 
-        className="w-full animate-fade-in-up"
+        className="lock-card w-full animate-fade-in-up"
         style={{ maxWidth: '380px' }}
       >
         {/* Back navigation - Strong and clear */}
@@ -288,55 +197,68 @@ export default function PersonGatePage({ params }: { params: Promise<{ id: strin
             </p>
           </div>
 
-          {/* Touch ID button */}
-          {hasTouchId && (
-            <div style={{ marginBottom: 'var(--space-lg)' }}>
+          {/* Passcode type toggle - Only show if master passcode is set up */}
+          {hasMasterPasscode && (
+            <div 
+              className="flex items-center justify-center"
+              style={{ 
+                marginBottom: 'var(--space-lg)',
+                gap: 'var(--space-xs)',
+              }}
+            >
               <button
-                onClick={handleTouchIdUnlock}
-                disabled={isTouchIdLoading || !!lockoutSeconds}
-                className="w-full flex items-center justify-center transition-all"
+                onClick={() => setUseMaster(false)}
+                className="transition-all"
                 style={{
-                  gap: 'var(--space-sm)',
-                  padding: 'var(--space-md) var(--space-lg)',
-                  background: 'var(--accent-gold)',
-                  color: 'var(--accent-gold-text)',
+                  padding: 'var(--space-xs) var(--space-md)',
+                  background: !useMaster ? 'var(--accent-primary)' : 'var(--surface-secondary)',
+                  color: !useMaster ? 'var(--text-inverse)' : 'var(--text-secondary)',
                   border: 'none',
-                  borderRadius: 'var(--radius-md)',
-                  fontSize: 'var(--text-base)',
-                  fontWeight: 600,
-                  cursor: isTouchIdLoading || !!lockoutSeconds ? 'not-allowed' : 'pointer',
-                  opacity: isTouchIdLoading || !!lockoutSeconds ? 0.6 : 1,
-                }}
-              >
-                {isTouchIdLoading ? (
-                  <>
-                    <svg className="animate-spin" style={{ width: '20px', height: '20px' }} fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Authenticating...
-                  </>
-                ) : (
-                  <>
-                    {/* Fingerprint icon */}
-                    <svg style={{ width: '22px', height: '22px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4" />
-                    </svg>
-                    Unlock with Touch ID
-                  </>
-                )}
-              </button>
-              
-              <div 
-                className="text-center"
-                style={{ 
-                  marginTop: 'var(--space-md)',
-                  color: 'var(--text-muted)',
+                  borderRadius: 'var(--card-radius-sm)',
                   fontSize: 'var(--text-sm)',
+                  fontWeight: 500,
+                  cursor: 'pointer',
                 }}
               >
-                or enter passcode below
-              </div>
+                Personal
+              </button>
+              <button
+                onClick={() => setUseMaster(true)}
+                className="transition-all flex items-center"
+                style={{
+                  padding: 'var(--space-xs) var(--space-md)',
+                  background: useMaster ? 'var(--accent-primary)' : 'var(--surface-secondary)',
+                  color: useMaster ? 'var(--text-inverse)' : 'var(--text-secondary)',
+                  border: 'none',
+                  borderRadius: 'var(--card-radius-sm)',
+                  fontSize: 'var(--text-sm)',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  gap: '6px',
+                }}
+              >
+                <svg style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                </svg>
+                Master
+              </button>
+            </div>
+          )}
+
+          {/* Helper text for master passcode */}
+          {useMaster && (
+            <div 
+              className="text-center"
+              style={{ 
+                marginBottom: 'var(--space-md)',
+                padding: 'var(--space-sm) var(--space-md)',
+                background: 'var(--accent-primary-light)',
+                borderRadius: 'var(--card-radius-sm)',
+                fontSize: 'var(--text-sm)',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              Enter your master passcode to unlock all profiles
             </div>
           )}
 
@@ -347,6 +269,7 @@ export default function PersonGatePage({ params }: { params: Promise<{ id: strin
             error={error}
             remainingAttempts={remainingAttempts}
             lockoutSeconds={lockoutSeconds}
+            placeholder={useMaster ? "Master passcode" : "Enter passcode"}
           />
         </div>
 
