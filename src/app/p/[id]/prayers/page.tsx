@@ -546,7 +546,7 @@ export default function PrayerListPage({ params }: { params: Promise<{ id: strin
                     <svg style={{ width: '16px', height: '16px' }} className="text-[var(--text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                     </svg>
-                    Edit {person.type === 'link' ? 'link' : person.type}
+                    Edit {person.type}
                   </button>
                   <div className="divider" style={{ margin: 'var(--space-xs) 0' }} />
                   <button
@@ -564,7 +564,7 @@ export default function PrayerListPage({ params }: { params: Promise<{ id: strin
                     <svg style={{ width: '16px', height: '16px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                     </svg>
-                    Delete {person.type === 'link' ? 'link' : person.type}
+                    Delete {person.type}
                   </button>
                 </div>
               )}

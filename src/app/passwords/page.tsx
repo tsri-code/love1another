@@ -297,7 +297,7 @@ export default function PasswordsPage() {
   // Lock
   const handleLock = async () => {
     await fetch('/api/passwords', { method: 'DELETE' });
-    setPeople([]);
+    setEntities([]);
     setViewState('unlock');
   };
 

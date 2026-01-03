@@ -16,7 +16,7 @@ export async function GET() {
 
     return NextResponse.json({
       authenticated: true,
-      personId: session.personId,
+      entityId: session.entityId,
     });
   } catch (error) {
     console.error('Error checking session:', error);

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getLinkById, getLinkPublicInfo, updateLink, updateLinkPasscode, deleteLink, getPersonBasicInfo } from '@/lib/db';
-import { verifyPasscode, hashPasscode, reencrypt } from '@/lib/crypto';
+import { getLinkById, getLinkPublicInfo, updateLink, deleteLink, getPersonBasicInfo, getPersonById } from '@/lib/db';
+import { verifyPasscode } from '@/lib/crypto';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,7 +43,7 @@ export async function GET(
 }
 
 /**
- * PUT /api/links/[id] - Update link (requires current passcode)
+ * PUT /api/links/[id] - Update link (requires one of the linked person's passcode)
  */
 export async function PUT(
   request: Request,
@@ -61,18 +61,34 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { displayName, currentPasscode, newPasscode } = body;
+    const { displayName, passcode, personId } = body;
 
-    // Require current passcode for any updates
-    if (!currentPasscode) {
+    // Require passcode and personId for updates
+    if (!passcode || !personId) {
       return NextResponse.json(
-        { error: 'Current passcode required' },
+        { error: 'Passcode and personId required' },
         { status: 400 }
       );
     }
 
-    // Verify current passcode
-    const isValid = await verifyPasscode(currentPasscode, link.passcodeHash);
+    // Verify personId is part of this link
+    if (link.person1Id !== personId && link.person2Id !== personId) {
+      return NextResponse.json(
+        { error: 'Not authorized to update this link' },
+        { status: 403 }
+      );
+    }
+
+    // Get the person and verify their passcode
+    const person = getPersonById(personId);
+    if (!person) {
+      return NextResponse.json(
+        { error: 'Person not found' },
+        { status: 404 }
+      );
+    }
+
+    const isValid = await verifyPasscode(passcode, person.passcodeHash);
     if (!isValid) {
       return NextResponse.json(
         { error: 'Incorrect passcode' },
@@ -80,32 +96,7 @@ export async function PUT(
       );
     }
 
-    // Check if changing passcode
-    if (newPasscode) {
-      if (newPasscode.length < 4) {
-        return NextResponse.json(
-          { error: 'New passcode must be at least 4 characters' },
-          { status: 400 }
-        );
-      }
-
-      // Re-encrypt prayer data with new passcode
-      if (link.prayerDataEncrypted) {
-        const newEncryptedData = await reencrypt(
-          link.prayerDataEncrypted,
-          currentPasscode,
-          newPasscode
-        );
-        const newHash = await hashPasscode(newPasscode);
-        updateLinkPasscode(id, newHash, newEncryptedData);
-      } else {
-        // No prayer data yet, just update hash
-        const newHash = await hashPasscode(newPasscode);
-        updateLinkPasscode(id, newHash, null);
-      }
-    }
-
-    // Update non-sensitive fields
+    // Update display name if provided
     if (displayName) {
       updateLink(id, { displayName: displayName.trim() });
     }
@@ -131,7 +122,7 @@ export async function PUT(
 }
 
 /**
- * DELETE /api/links/[id] - Delete link (requires passcode)
+ * DELETE /api/links/[id] - Delete link (requires one of the linked person's passcode)
  */
 export async function DELETE(
   request: Request,
@@ -149,17 +140,33 @@ export async function DELETE(
     }
 
     const body = await request.json();
-    const { passcode } = body;
+    const { passcode, personId } = body;
 
-    if (!passcode) {
+    if (!passcode || !personId) {
       return NextResponse.json(
-        { error: 'Passcode required to delete link' },
+        { error: 'Passcode and personId required to delete link' },
         { status: 400 }
       );
     }
 
-    // Verify passcode
-    const isValid = await verifyPasscode(passcode, link.passcodeHash);
+    // Verify personId is part of this link
+    if (link.person1Id !== personId && link.person2Id !== personId) {
+      return NextResponse.json(
+        { error: 'Not authorized to delete this link' },
+        { status: 403 }
+      );
+    }
+
+    // Get the person and verify their passcode
+    const person = getPersonById(personId);
+    if (!person) {
+      return NextResponse.json(
+        { error: 'Person not found' },
+        { status: 404 }
+      );
+    }
+
+    const isValid = await verifyPasscode(passcode, person.passcodeHash);
     if (!isValid) {
       return NextResponse.json(
         { error: 'Invalid passcode' },

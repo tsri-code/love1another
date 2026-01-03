@@ -481,8 +481,8 @@ export function getLinksForPerson(personId: string): LinkWithPeople[] {
     displayName: string;
     createdAt: string;
     updatedAt: string;
-    passcodeHash: string;
-    passcodeEncrypted: string | null;
+    person1KeyEncrypted: string | null;
+    person2KeyEncrypted: string | null;
     prayerDataEncrypted: Buffer | null;
     verseId: number;
     prayerCount: number;
@@ -504,8 +504,8 @@ export function getLinksForPerson(personId: string): LinkWithPeople[] {
     displayName: row.displayName,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
-    passcodeHash: row.passcodeHash,
-    passcodeEncrypted: row.passcodeEncrypted,
+    person1KeyEncrypted: row.person1KeyEncrypted,
+    person2KeyEncrypted: row.person2KeyEncrypted,
     prayerDataEncrypted: row.prayerDataEncrypted,
     verseId: row.verseId,
     prayerCount: row.prayerCount,
@@ -534,12 +534,12 @@ export function getLinkById(id: string): Link | undefined {
 }
 
 // Get link public info (without sensitive data)
-export function getLinkPublicInfo(id: string): Omit<Link, 'passcodeHash' | 'prayerDataEncrypted'> | undefined {
+export function getLinkPublicInfo(id: string): Omit<Link, 'person1KeyEncrypted' | 'person2KeyEncrypted' | 'prayerDataEncrypted'> | undefined {
   const stmt = db.prepare(`
     SELECT id, person1Id, person2Id, displayName, createdAt, updatedAt, verseId, prayerCount, lastPrayedAt
     FROM links WHERE id = ?
   `);
-  return stmt.get(id) as Omit<Link, 'passcodeHash' | 'prayerDataEncrypted'> | undefined;
+  return stmt.get(id) as Omit<Link, 'person1KeyEncrypted' | 'person2KeyEncrypted' | 'prayerDataEncrypted'> | undefined;
 }
 
 // Create a new link between two people
@@ -596,15 +596,6 @@ export function updateLink(id: string, data: {
   values.push(id);
   const stmt = db.prepare(`UPDATE links SET ${fields.join(', ')} WHERE id = ?`);
   stmt.run(...values);
-}
-
-// Update link passcode
-export function updateLinkPasscode(id: string, passcodeHash: string, prayerDataEncrypted: Buffer | null): void {
-  const now = new Date().toISOString();
-  const stmt = db.prepare(`
-    UPDATE links SET passcodeHash = ?, prayerDataEncrypted = ?, updatedAt = ? WHERE id = ?
-  `);
-  stmt.run(passcodeHash, prayerDataEncrypted, now, id);
 }
 
 // Update link prayer data
