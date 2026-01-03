@@ -19,7 +19,7 @@ export async function POST(
     
     if (session) {
       // Delete all sessions for this person
-      deleteSessionsForPerson(id);
+      await deleteSessionsForPerson(id);
       await clearSessionCookie();
     }
 
@@ -32,4 +32,3 @@ export async function POST(
     );
   }
 }
-

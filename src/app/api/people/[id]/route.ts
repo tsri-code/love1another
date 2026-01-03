@@ -13,7 +13,7 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const person = getPersonPublicInfo(id);
+    const person = await getPersonPublicInfo(id);
 
     if (!person) {
       return NextResponse.json(
@@ -23,7 +23,8 @@ export async function GET(
     }
 
     // Get links this person is part of (without sensitive data)
-    const links = getLinksForPerson(id).map(link => ({
+    const allLinks = await getLinksForPerson(id);
+    const links = allLinks.map(link => ({
       id: link.id,
       displayName: link.displayName,
       person1: link.person1,
@@ -54,7 +55,7 @@ export async function PUT(
 ) {
   try {
     const { id } = await params;
-    const person = getPersonById(id);
+    const person = await getPersonById(id);
 
     if (!person) {
       return NextResponse.json(
@@ -116,16 +117,16 @@ export async function PUT(
           newPasscode
         );
         const newHash = await hashPasscode(newPasscode);
-        updatePersonPasscode(id, newHash, newEncryptedData);
+        await updatePersonPasscode(id, newHash, newEncryptedData);
       } else {
         // No prayer data yet, just update hash
         const newHash = await hashPasscode(newPasscode);
-        updatePersonPasscode(id, newHash, null);
+        await updatePersonPasscode(id, newHash, null);
       }
     }
 
     // Update all fields
-    updatePerson(id, {
+    await updatePerson(id, {
       displayName: displayName?.trim(),
       type,
       avatarInitials,
@@ -133,10 +134,11 @@ export async function PUT(
       avatarPath,
     });
 
-    const updatedPerson = getPersonPublicInfo(id);
+    const updatedPerson = await getPersonPublicInfo(id);
     
     // Get links this person is part of
-    const links = getLinksForPerson(id).map(link => ({
+    const allLinks = await getLinksForPerson(id);
+    const links = allLinks.map(link => ({
       id: link.id,
       displayName: link.displayName,
       person1: link.person1,
@@ -167,7 +169,7 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const person = getPersonById(id);
+    const person = await getPersonById(id);
 
     if (!person) {
       return NextResponse.json(
@@ -196,7 +198,7 @@ export async function DELETE(
     }
 
     // Note: Links involving this person will be cascade deleted due to foreign key
-    deletePerson(id);
+    await deletePerson(id);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Error deleting person:', error);

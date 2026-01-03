@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET() {
   try {
-    const hasPasscode = hasMasterPasscode();
+    const hasPasscode = await hasMasterPasscode();
     return NextResponse.json({ isSetUp: hasPasscode });
   } catch (error) {
     console.error('Error checking setup:', error);
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
       );
     }
     
-    const settings = getMasterSettings();
+    const settings = await getMasterSettings();
     
     if (settings) {
       // Changing existing passcode - require old passcode
@@ -55,11 +55,11 @@ export async function POST(request: Request) {
       }
       
       const newHash = await hashPasscode(passcode);
-      updateMasterPasscode(newHash);
+      await updateMasterPasscode(newHash);
     } else {
       // First time setup
       const hash = await hashPasscode(passcode);
-      createMasterSettings(hash);
+      await createMasterSettings(hash);
     }
     
     return NextResponse.json({ success: true });
@@ -71,4 +71,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

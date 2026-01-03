@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET() {
   try {
-    const people = getAvailablePeopleForLinking();
+    const people = await getAvailablePeopleForLinking();
     return NextResponse.json({ people });
   } catch (error) {
     console.error('Error fetching available people:', error);

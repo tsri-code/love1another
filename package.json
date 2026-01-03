@@ -6,9 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:export": "node scripts/export-local-db.js",
+    "db:import": "node scripts/import-to-turso.js"
   },
   "dependencies": {
+    "@libsql/client": "^0.15.15",
     "argon2": "^0.44.0",
     "better-sqlite3": "^12.5.0",
     "date-fns": "^4.1.0",

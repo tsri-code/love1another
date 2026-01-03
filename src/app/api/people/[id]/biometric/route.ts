@@ -19,7 +19,7 @@ export async function GET(
     const { id } = await params;
     
     // Check if person exists
-    const person = getPersonById(id);
+    const person = await getPersonById(id);
     if (!person) {
       return NextResponse.json(
         { error: 'Person not found' },
@@ -28,7 +28,7 @@ export async function GET(
     }
     
     // Check if WebAuthn credentials exist
-    const credentials = getWebAuthnCredentials();
+    const credentials = await getWebAuthnCredentials();
     if (credentials.length === 0) {
       return NextResponse.json(
         { error: 'Touch ID not set up. Set it up in the Passwords page first.' },
@@ -109,7 +109,7 @@ export async function POST(
     
     // Verify the credential exists
     const credentialId = credential.id;
-    const existingCredentials = getWebAuthnCredentials();
+    const existingCredentials = await getWebAuthnCredentials();
     
     if (!existingCredentials.includes(credentialId)) {
       return NextResponse.json(
@@ -119,7 +119,7 @@ export async function POST(
     }
     
     // Get the person and decrypt their passcode
-    const person = getPersonById(id);
+    const person = await getPersonById(id);
     if (!person) {
       return NextResponse.json(
         { error: 'Person not found' },
@@ -156,4 +156,3 @@ export async function POST(
     );
   }
 }
-

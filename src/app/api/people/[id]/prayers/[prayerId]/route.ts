@@ -27,7 +27,7 @@ export async function PATCH(
 
     await refreshSession();
 
-    const person = getPersonById(id);
+    const person = await getPersonById(id);
     if (!person || !person.prayerDataEncrypted) {
       return NextResponse.json(
         { error: 'Person not found' },
@@ -159,7 +159,7 @@ export async function PATCH(
       return new Date(p.lastPrayedAt) > new Date(latest) ? p.lastPrayedAt : latest;
     }, null);
     
-    updatePrayerData(id, encryptedData, prayerData.prayers.length, lastPrayedAt);
+    await updatePrayerData(id, encryptedData, prayerData.prayers.length, lastPrayedAt);
 
     return NextResponse.json({ prayer });
   } catch (error) {
@@ -192,7 +192,7 @@ export async function DELETE(
 
     await refreshSession();
 
-    const person = getPersonById(id);
+    const person = await getPersonById(id);
     if (!person || !person.prayerDataEncrypted) {
       return NextResponse.json(
         { error: 'Person not found' },
@@ -241,7 +241,7 @@ export async function DELETE(
       return new Date(p.lastPrayedAt) > new Date(latest) ? p.lastPrayedAt : latest;
     }, null);
     
-    updatePrayerData(id, encryptedData, prayerData.prayers.length, lastPrayedAt);
+    await updatePrayerData(id, encryptedData, prayerData.prayers.length, lastPrayedAt);
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -252,4 +252,3 @@ export async function DELETE(
     );
   }
 }
-

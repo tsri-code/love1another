@@ -96,6 +96,9 @@ export default function AddPersonPage() {
     setIsLoading(true);
 
     try {
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/ecaa64e1-9858-48b0-a9e8-060dbefd294c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'add/page.tsx:handleSubmit',message:'About to call POST /api/people',data:{displayName,type},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H5'})}).catch(()=>{});
+      // #endregion
       const res = await fetch('/api/people', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -109,15 +112,33 @@ export default function AddPersonPage() {
         }),
       });
 
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/ecaa64e1-9858-48b0-a9e8-060dbefd294c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'add/page.tsx:response',message:'Response received',data:{status:res.status,ok:res.ok,statusText:res.statusText},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H5'})}).catch(()=>{});
+      // #endregion
+
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to create');
+        // Try to get error text first
+        const text = await res.text();
+        // #region agent log
+        fetch('http://127.0.0.1:7246/ingest/ecaa64e1-9858-48b0-a9e8-060dbefd294c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'add/page.tsx:errorBody',message:'Error response body',data:{text:text.substring(0,500)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H5'})}).catch(()=>{});
+        // #endregion
+        let errorMessage = 'Failed to create';
+        try {
+          const data = JSON.parse(text);
+          errorMessage = data.error || errorMessage;
+        } catch {
+          errorMessage = text || errorMessage;
+        }
+        throw new Error(errorMessage);
       }
 
       showToast(`${displayName} added successfully`, 'success');
       router.push('/');
     } catch (error) {
       console.error('Error creating:', error);
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/ecaa64e1-9858-48b0-a9e8-060dbefd294c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'add/page.tsx:catch',message:'Error in handleSubmit',data:{error:String(error)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H5'})}).catch(()=>{});
+      // #endregion
       showToast(error instanceof Error ? error.message : 'Failed to create', 'error');
     } finally {
       setIsLoading(false);

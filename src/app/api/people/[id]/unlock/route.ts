@@ -14,7 +14,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const person = getPersonById(id);
+    const person = await getPersonById(id);
 
     if (!person) {
       return NextResponse.json(
@@ -24,7 +24,7 @@ export async function POST(
     }
 
     // Check rate limiting
-    const rateLimitStatus = isRateLimited(id);
+    const rateLimitStatus = await isRateLimited(id);
     if (rateLimitStatus.limited) {
       const remainingSeconds = Math.ceil(
         (new Date(rateLimitStatus.lockoutEndsAt!).getTime() - Date.now()) / 1000
@@ -54,7 +54,7 @@ export async function POST(
 
     if (!isValid) {
       // Record failed attempt
-      const attemptResult = recordFailedAttempt(id);
+      const attemptResult = await recordFailedAttempt(id);
       
       if (attemptResult.locked) {
         return NextResponse.json(
@@ -77,10 +77,10 @@ export async function POST(
     }
 
     // Passcode correct - reset rate limit and create session
-    resetRateLimit(id);
+    await resetRateLimit(id);
     
     const token = generateSessionToken();
-    createSession(id, token);
+    await createSession(id, token);
     await setSessionCookie(token);
 
     return NextResponse.json({ 
@@ -95,4 +95,3 @@ export async function POST(
     );
   }
 }
-

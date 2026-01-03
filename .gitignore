@@ -45,6 +45,7 @@ next-env.d.ts
 *.db
 *.db-wal
 *.db-shm
+scripts/db-export.json
 
 # cookies/session files (sensitive)
 cookies.txt

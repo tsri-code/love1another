@@ -20,7 +20,7 @@ export async function getSession(): Promise<SessionData | null> {
   }
 
   const token = sessionCookie.value;
-  const session = getSessionByToken(token);
+  const session = await getSessionByToken(token);
 
   if (!session) {
     return null;
@@ -28,7 +28,7 @@ export async function getSession(): Promise<SessionData | null> {
 
   // Check if session has expired
   if (new Date(session.expiresAt) <= new Date()) {
-    dbDeleteSession(token);
+    await dbDeleteSession(token);
     return null;
   }
 
@@ -65,7 +65,7 @@ export async function refreshSession(): Promise<boolean> {
     return false;
   }
 
-  updateSessionActivity(session.token);
+  await updateSessionActivity(session.token);
   return true;
 }
 
@@ -75,7 +75,7 @@ export async function refreshSession(): Promise<boolean> {
 export async function deleteSession(): Promise<void> {
   const session = await getSession();
   if (session) {
-    dbDeleteSession(session.token);
+    await dbDeleteSession(session.token);
   }
 }
 
@@ -100,4 +100,3 @@ export async function clearSessionCookie(): Promise<void> {
   const cookieStore = await cookies();
   cookieStore.delete(SESSION_COOKIE_NAME);
 }
-

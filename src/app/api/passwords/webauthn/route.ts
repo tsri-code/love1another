@@ -67,7 +67,7 @@ export async function GET(request: Request) {
       });
     } else {
       // Authentication options
-      const credentials = getWebAuthnCredentials();
+      const credentials = await getWebAuthnCredentials();
       
       return NextResponse.json({
         challengeId,
@@ -121,7 +121,7 @@ export async function POST(request: Request) {
         );
       }
       
-      const settings = getMasterSettings();
+      const settings = await getMasterSettings();
       if (!settings) {
         return NextResponse.json(
           { error: 'Master passcode not set up' },
@@ -140,17 +140,17 @@ export async function POST(request: Request) {
       // Store the credential ID
       // Note: In production, you'd verify the attestation and store the public key
       const credentialId = credential.id;
-      const existingCredentials = getWebAuthnCredentials();
+      const existingCredentials = await getWebAuthnCredentials();
       
       if (!existingCredentials.includes(credentialId)) {
-        updateWebAuthnCredentials([...existingCredentials, credentialId]);
+        await updateWebAuthnCredentials([...existingCredentials, credentialId]);
       }
       
       return NextResponse.json({ success: true });
     } else if (action === 'authenticate') {
       // Verify the credential exists
       const credentialId = credential.id;
-      const existingCredentials = getWebAuthnCredentials();
+      const existingCredentials = await getWebAuthnCredentials();
       
       if (!existingCredentials.includes(credentialId)) {
         return NextResponse.json(
@@ -205,7 +205,7 @@ export async function DELETE() {
       );
     }
     
-    updateWebAuthnCredentials([]);
+    await updateWebAuthnCredentials([]);
     
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -216,4 +216,3 @@ export async function DELETE() {
     );
   }
 }
-

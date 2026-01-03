@@ -6,9 +6,6 @@ import { getSessionForPerson, refreshSession } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 
-// Cache for decrypted prayer data (only valid while session active)
-const decryptedDataCache = new Map<string, { data: PrayerData; passcode: string }>();
-
 /**
  * GET /api/people/[id]/prayers - Get all prayers (requires session)
  */
@@ -31,7 +28,7 @@ export async function GET(
     // Refresh session activity
     await refreshSession();
 
-    const person = getPersonById(id);
+    const person = await getPersonById(id);
     if (!person) {
       return NextResponse.json(
         { error: 'Person not found' },
@@ -40,8 +37,6 @@ export async function GET(
     }
 
     // Get passcode from URL (passed securely via POST to unlock)
-    // We need to decrypt the data using the passcode
-    // The passcode should be in the session or passed in
     const url = new URL(request.url);
     const passcode = url.searchParams.get('p');
 
@@ -59,9 +54,6 @@ export async function GET(
     try {
       const decryptedJson = await decrypt(person.prayerDataEncrypted, passcode);
       const prayerData: PrayerData = JSON.parse(decryptedJson);
-      
-      // Cache for subsequent operations
-      decryptedDataCache.set(id, { data: prayerData, passcode });
 
       return NextResponse.json({ prayers: prayerData.prayers });
     } catch {
@@ -100,7 +92,7 @@ export async function POST(
 
     await refreshSession();
 
-    const person = getPersonById(id);
+    const person = await getPersonById(id);
     if (!person) {
       return NextResponse.json(
         { error: 'Person not found' },
@@ -180,7 +172,7 @@ export async function POST(
       return new Date(p.lastPrayedAt) > new Date(latest) ? p.lastPrayedAt : latest;
     }, null);
     
-    updatePrayerData(id, encryptedData, prayerData.prayers.length, lastPrayedAt);
+    await updatePrayerData(id, encryptedData, prayerData.prayers.length, lastPrayedAt);
 
     return NextResponse.json({ prayer: newPrayer }, { status: 201 });
   } catch (error) {
@@ -191,4 +183,3 @@ export async function POST(
     );
   }
 }
-

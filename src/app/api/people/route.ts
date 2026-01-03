@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET() {
   try {
-    const people = getAllPeople();
+    const people = await getAllPeople();
     return NextResponse.json({ people });
   } catch (error) {
     console.error('Error fetching people:', error);
@@ -64,7 +64,7 @@ export async function POST(request: Request) {
     const prayerDataEncrypted = await encrypt(JSON.stringify(initialPrayerData), passcode);
 
     // Create person/group
-    const person = createPerson({
+    const person = await createPerson({
       displayName: displayName.trim(),
       type,
       avatarInitials: avatarInitials || displayName.trim().substring(0, 2).toUpperCase(),

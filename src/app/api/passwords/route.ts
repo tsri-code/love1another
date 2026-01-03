@@ -48,7 +48,7 @@ export async function GET() {
       );
     }
     
-    const entities = getAllEntitiesWithPasscodes();
+    const entities = await getAllEntitiesWithPasscodes();
     
     // Decrypt passcodes
     const decrypted = entities.map(entity => {
@@ -96,7 +96,7 @@ export async function POST(request: Request) {
       );
     }
     
-    const settings = getMasterSettings();
+    const settings = await getMasterSettings();
     if (!settings) {
       return NextResponse.json(
         { error: 'Master passcode not set up' },
@@ -157,4 +157,3 @@ export async function DELETE() {
     );
   }
 }
-

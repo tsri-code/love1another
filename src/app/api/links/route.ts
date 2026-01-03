@@ -36,8 +36,8 @@ export async function POST(request: Request) {
     }
 
     // Verify both people exist and are of type 'person'
-    const person1 = getPersonById(person1Id);
-    const person2 = getPersonById(person2Id);
+    const person1 = await getPersonById(person1Id);
+    const person2 = await getPersonById(person2Id);
 
     if (!person1 || !person2) {
       return NextResponse.json(
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
     }
 
     // Check if link already exists
-    const existingLink = getLinkBetweenPeople(person1Id, person2Id);
+    const existingLink = await getLinkBetweenPeople(person1Id, person2Id);
     if (existingLink) {
       return NextResponse.json(
         { error: 'A link already exists between these two people' },
@@ -101,7 +101,7 @@ export async function POST(request: Request) {
     const prayerDataEncrypted = await encrypt(JSON.stringify(initialPrayerData), linkEncryptionKey);
 
     // Create link
-    const link = createLink({
+    const link = await createLink({
       person1Id,
       person2Id,
       displayName: linkDisplayName,
@@ -130,4 +130,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

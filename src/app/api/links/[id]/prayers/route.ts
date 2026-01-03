@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getLinkById, updateLinkPrayerData } from '@/lib/db';
+import { getLinkById, updateLinkPrayerData, Link } from '@/lib/db';
 import type { PrayerData, Prayer } from '@/lib/db';
 import { decrypt, encrypt, generateId } from '@/lib/crypto';
 import { getSessionForEntity, refreshSession } from '@/lib/session';
@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 /**
  * Helper to decrypt the link's encryption key using the person's passcode
  */
-async function getLinkEncryptionKey(link: NonNullable<ReturnType<typeof getLinkById>>, personPasscode: string, personId: string): Promise<string | null> {
+async function getLinkEncryptionKey(link: Link, personPasscode: string, personId: string): Promise<string | null> {
   try {
     // Determine which encrypted key to use based on which person is accessing
     const encryptedKey = link.person1Id === personId 
@@ -66,7 +66,7 @@ export async function GET(
     // Refresh session activity
     await refreshSession();
 
-    const link = getLinkById(id);
+    const link = await getLinkById(id);
     if (!link) {
       return NextResponse.json(
         { error: 'Link not found' },
@@ -152,7 +152,7 @@ export async function POST(
 
     await refreshSession();
 
-    const link = getLinkById(id);
+    const link = await getLinkById(id);
     if (!link) {
       return NextResponse.json(
         { error: 'Link not found' },
@@ -246,7 +246,7 @@ export async function POST(
       return new Date(p.lastPrayedAt) > new Date(latest) ? p.lastPrayedAt : latest;
     }, null);
     
-    updateLinkPrayerData(id, encryptedData, prayerData.prayers.length, lastPrayedAt);
+    await updateLinkPrayerData(id, encryptedData, prayerData.prayers.length, lastPrayedAt);
 
     return NextResponse.json({ prayer: newPrayer }, { status: 201 });
   } catch (error) {
@@ -257,4 +257,3 @@ export async function POST(
     );
   }
 }
-

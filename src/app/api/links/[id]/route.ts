@@ -13,7 +13,7 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const link = getLinkPublicInfo(id);
+    const link = await getLinkPublicInfo(id);
 
     if (!link) {
       return NextResponse.json(
@@ -23,8 +23,8 @@ export async function GET(
     }
 
     // Get info about the linked people
-    const person1 = getPersonBasicInfo(link.person1Id);
-    const person2 = getPersonBasicInfo(link.person2Id);
+    const person1 = await getPersonBasicInfo(link.person1Id);
+    const person2 = await getPersonBasicInfo(link.person2Id);
 
     return NextResponse.json({ 
       link: {
@@ -51,7 +51,7 @@ export async function PUT(
 ) {
   try {
     const { id } = await params;
-    const link = getLinkById(id);
+    const link = await getLinkById(id);
 
     if (!link) {
       return NextResponse.json(
@@ -80,7 +80,7 @@ export async function PUT(
     }
 
     // Get the person and verify their passcode
-    const person = getPersonById(personId);
+    const person = await getPersonById(personId);
     if (!person) {
       return NextResponse.json(
         { error: 'Person not found' },
@@ -98,12 +98,12 @@ export async function PUT(
 
     // Update display name if provided
     if (displayName) {
-      updateLink(id, { displayName: displayName.trim() });
+      await updateLink(id, { displayName: displayName.trim() });
     }
 
-    const updatedLink = getLinkPublicInfo(id);
-    const person1 = getPersonBasicInfo(updatedLink!.person1Id);
-    const person2 = getPersonBasicInfo(updatedLink!.person2Id);
+    const updatedLink = await getLinkPublicInfo(id);
+    const person1 = await getPersonBasicInfo(updatedLink!.person1Id);
+    const person2 = await getPersonBasicInfo(updatedLink!.person2Id);
 
     return NextResponse.json({ 
       link: {
@@ -130,7 +130,7 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const link = getLinkById(id);
+    const link = await getLinkById(id);
 
     if (!link) {
       return NextResponse.json(
@@ -158,7 +158,7 @@ export async function DELETE(
     }
 
     // Get the person and verify their passcode
-    const person = getPersonById(personId);
+    const person = await getPersonById(personId);
     if (!person) {
       return NextResponse.json(
         { error: 'Person not found' },
@@ -174,7 +174,7 @@ export async function DELETE(
       );
     }
 
-    deleteLink(id);
+    await deleteLink(id);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Error deleting link:', error);
@@ -184,4 +184,3 @@ export async function DELETE(
     );
   }
 }
-
