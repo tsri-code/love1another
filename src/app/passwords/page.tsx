@@ -14,7 +14,7 @@ interface EntityWithPasscode {
   createdAt: string;
 }
 
-type ViewState = 'loading' | 'setup' | 'unlock' | 'scanning' | 'success' | 'passwords';
+type ViewState = 'loading' | 'setup' | 'unlock' | 'success' | 'passwords';
 
 export default function PasswordsPage() {
   const [viewState, setViewState] = useState<ViewState>('loading');
@@ -24,20 +24,14 @@ export default function PasswordsPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPasscodes, setShowPasscodes] = useState<Record<string, boolean>>({});
-  const [hasTouchId, setHasTouchId] = useState(false);
-  const [touchIdAvailable, setTouchIdAvailable] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [showTouchIdModal, setShowTouchIdModal] = useState(false);
-  const [touchIdPasscode, setTouchIdPasscode] = useState('');
-
-  // Check if WebAuthn is available
-  useEffect(() => {
-    if (typeof window !== 'undefined' && window.PublicKeyCredential) {
-      PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
-        .then(available => setTouchIdAvailable(available))
-        .catch(() => setTouchIdAvailable(false));
-    }
-  }, []);
+  
+  // Reset password modal state
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [resetSuccess, setResetSuccess] = useState(false);
 
   // Check setup status and try to load passwords
   const checkStatus = useCallback(async () => {
@@ -49,10 +43,6 @@ export default function PasswordsPage() {
         setViewState('setup');
         return;
       }
-      
-      const webauthnRes = await fetch('/api/passwords/webauthn?action=authenticate');
-      const webauthnData = await webauthnRes.json();
-      setHasTouchId(webauthnData.hasCredentials);
       
       const passwordsRes = await fetch('/api/passwords');
       if (passwordsRes.ok) {
@@ -148,147 +138,52 @@ export default function PasswordsPage() {
     }
   };
 
-  // Unlock with Touch ID
-  const handleTouchId = async () => {
+  // Reset master password
+  const handleResetPassword = async () => {
     setError('');
-    setViewState('scanning');
     
-    try {
-      const optionsRes = await fetch('/api/passwords/webauthn?action=authenticate');
-      const { challengeId, options } = await optionsRes.json();
-      
-      const challenge = Uint8Array.from(
-        atob(options.challenge.replace(/-/g, '+').replace(/_/g, '/')),
-        c => c.charCodeAt(0)
-      );
-      
-      const credential = await navigator.credentials.get({
-        publicKey: {
-          ...options,
-          challenge,
-          allowCredentials: options.allowCredentials?.map((cred: { id: string; type: string; transports?: string[] }) => ({
-            ...cred,
-            id: Uint8Array.from(
-              atob(cred.id.replace(/-/g, '+').replace(/_/g, '/')),
-              c => c.charCodeAt(0)
-            ),
-          })),
-        },
-      }) as PublicKeyCredential;
-      
-      if (!credential) {
-        throw new Error('Authentication cancelled');
-      }
-      
-      const res = await fetch('/api/passwords/webauthn', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'authenticate',
-          challengeId,
-          credential: { id: credential.id, type: credential.type },
-        }),
-      });
-      
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Authentication failed');
-      }
-      
-      setViewState('success');
-      setTimeout(() => checkStatus(), 1000);
-    } catch (err) {
-      if (err instanceof Error && err.name !== 'NotAllowedError') {
-        setError(err.message);
-      }
-      setViewState('unlock');
-    }
-  };
-
-  // Open Touch ID registration modal
-  const handleRegisterTouchId = () => {
-    setShowTouchIdModal(true);
-    setTouchIdPasscode('');
-    setError('');
-  };
-
-  // Actually register Touch ID after passcode is entered
-  const confirmTouchIdRegistration = async () => {
-    if (!touchIdPasscode) {
-      setError('Please enter your master passcode');
+    if (!currentPassword) {
+      setError('Current password is required');
       return;
     }
-
-    // Check if WebAuthn is supported
-    if (!window.PublicKeyCredential) {
-      setError('Touch ID is not supported in this browser. Try using Safari or Chrome.');
+    
+    if (newPassword.length < 6) {
+      setError('New password must be at least 6 characters');
+      return;
+    }
+    
+    if (newPassword !== confirmNewPassword) {
+      setError('New passwords do not match');
       return;
     }
     
     setLoading(true);
-    setError('');
-    
     try {
-      // Check if platform authenticator is available
-      const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
-      if (!available) {
-        throw new Error('Touch ID is not accessible from this browser. Please open this page in Safari or Chrome to enable Touch ID.');
-      }
-      
-      const optionsRes = await fetch('/api/passwords/webauthn?action=register');
-      const { challengeId, options } = await optionsRes.json();
-      
-      const challenge = Uint8Array.from(
-        atob(options.challenge.replace(/-/g, '+').replace(/_/g, '/')),
-        c => c.charCodeAt(0)
-      );
-      const userId = Uint8Array.from(
-        atob(options.user.id.replace(/-/g, '+').replace(/_/g, '/')),
-        c => c.charCodeAt(0)
-      );
-      
-      const credential = await navigator.credentials.create({
-        publicKey: {
-          ...options,
-          challenge,
-          user: { ...options.user, id: userId },
-        },
-      }) as PublicKeyCredential;
-      
-      if (!credential) {
-        throw new Error('Registration cancelled');
-      }
-      
-      const res = await fetch('/api/passwords/webauthn', {
+      const res = await fetch('/api/passwords/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'register',
-          challengeId,
-          credential: { id: credential.id, type: credential.type },
-          passcode: touchIdPasscode,
+        body: JSON.stringify({ 
+          oldPasscode: currentPassword,
+          passcode: newPassword 
         }),
       });
       
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || 'Registration failed');
+        throw new Error(data.error || 'Reset failed');
       }
       
-      setHasTouchId(true);
-      setShowTouchIdModal(false);
-      setTouchIdPasscode('');
-      setError('');
+      setResetSuccess(true);
+      setTimeout(() => {
+        setShowResetModal(false);
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmNewPassword('');
+        setResetSuccess(false);
+        setError('');
+      }, 2000);
     } catch (err) {
-      if (err instanceof Error) {
-        if (err.name === 'NotAllowedError') {
-          setError('Touch ID was cancelled or not allowed.');
-        } else if (err.name === 'NotSupportedError') {
-          setError('Touch ID is not supported. Try using Safari.');
-        } else {
-          setError(err.message);
-        }
-      }
+      setError(err instanceof Error ? err.message : 'Reset failed');
     } finally {
       setLoading(false);
     }
@@ -307,8 +202,8 @@ export default function PasswordsPage() {
   };
 
   // Copy passcode
-  const copyPasscode = async (id: string, passcode: string) => {
-    await navigator.clipboard.writeText(passcode);
+  const copyPasscode = async (id: string, passcodeValue: string) => {
+    await navigator.clipboard.writeText(passcodeValue);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
   };
@@ -328,72 +223,6 @@ export default function PasswordsPage() {
             }} 
           />
           <p className="text-[var(--text-muted)]">Loading...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Fingerprint scanning animation
-  if (viewState === 'scanning') {
-    return (
-      <div className="page-center">
-        <div className="flex flex-col items-center text-center" style={{ gap: 'var(--space-xl)' }}>
-          <div className="relative">
-            {/* Animated rings */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div 
-                className="rounded-full border-2 opacity-30 animate-ping"
-                style={{ 
-                  width: '140px', 
-                  height: '140px',
-                  borderColor: 'var(--accent-primary)',
-                }} 
-              />
-            </div>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div 
-                className="rounded-full border-2 opacity-50 animate-pulse"
-                style={{ 
-                  width: '110px', 
-                  height: '110px',
-                  borderColor: 'var(--accent-primary)',
-                }} 
-              />
-            </div>
-            {/* Fingerprint icon */}
-            <div 
-              className="relative rounded-full flex items-center justify-center"
-              style={{ 
-                width: '88px', 
-                height: '88px',
-                background: 'var(--surface-primary)',
-                boxShadow: 'var(--shadow-lg)',
-              }}
-            >
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="1.5">
-                <path d="M12 10v4M7.5 7a6.5 6.5 0 0 1 9 0M5.5 4.5a10 10 0 0 1 13 0M4 12a8 8 0 0 0 2 5.3M20 12a8 8 0 0 1-2 5.3M8.5 16.5a5 5 0 0 0 7 0M12 3v1M12 20v1"/>
-                <circle cx="12" cy="12" r="2" fill="var(--accent-primary)" opacity="0.3"/>
-              </svg>
-            </div>
-          </div>
-          <div>
-            <h2 
-              className="font-serif font-semibold"
-              style={{ fontSize: 'var(--text-xl)', color: 'var(--text-primary)', marginBottom: 'var(--space-xs)' }}
-            >
-              Touch ID
-            </h2>
-            <p style={{ color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
-              Place your finger on the sensor
-            </p>
-          </div>
-          <button
-            onClick={() => setViewState('unlock')}
-            className="text-sm underline transition-colors hover:text-[var(--text-secondary)]"
-            style={{ color: 'var(--text-muted)' }}
-          >
-            Cancel
-          </button>
         </div>
       </div>
     );
@@ -552,19 +381,6 @@ export default function PasswordsPage() {
                     {loading ? 'Setting up...' : 'Create Master Password'}
                   </button>
                 </form>
-
-                {touchIdAvailable && (
-                  <p 
-                    className="text-center"
-                    style={{ 
-                      color: 'var(--text-muted)', 
-                      fontSize: 'var(--text-sm)',
-                      marginTop: 'var(--space-lg)',
-                    }}
-                  >
-                    💡 After setup, you can enable Touch ID for faster access
-                  </p>
-                )}
               </div>
             </div>
           )}
@@ -599,51 +415,9 @@ export default function PasswordsPage() {
                     Unlock Passwords
                   </h1>
                   <p style={{ color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
-                    {hasTouchId ? 'Use Touch ID or enter your master password' : 'Enter your master password'}
+                    Enter your master password
                   </p>
                 </div>
-
-                {/* Touch ID Button */}
-                {hasTouchId && touchIdAvailable && (
-                  <>
-                    <button
-                      onClick={handleTouchId}
-                      className="w-full rounded-2xl flex flex-col items-center transition-all hover:scale-[1.02] active:scale-[0.98]"
-                      style={{ 
-                        padding: 'var(--space-lg)',
-                        background: 'var(--bg-secondary)', 
-                        border: '2px solid var(--accent-primary)',
-                        gap: 'var(--space-sm)',
-                      }}
-                    >
-                      <div 
-                        className="rounded-full flex items-center justify-center"
-                        style={{ 
-                          width: '64px', 
-                          height: '64px',
-                          background: 'var(--accent-primary)',
-                          opacity: 0.15,
-                        }}
-                      >
-                        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="1.5">
-                          <path d="M12 10v4M7.5 7a6.5 6.5 0 0 1 9 0M5.5 4.5a10 10 0 0 1 13 0M4 12a8 8 0 0 0 2 5.3M20 12a8 8 0 0 1-2 5.3M8.5 16.5a5 5 0 0 0 7 0"/>
-                        </svg>
-                      </div>
-                      <span className="font-semibold" style={{ color: 'var(--accent-primary)' }}>
-                        Unlock with Touch ID
-                      </span>
-                    </button>
-
-                    <div 
-                      className="flex items-center"
-                      style={{ gap: 'var(--space-md)', margin: 'var(--space-lg) 0' }}
-                    >
-                      <div className="flex-1 h-px" style={{ background: 'var(--border-light)' }} />
-                      <span style={{ color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>or</span>
-                      <div className="flex-1 h-px" style={{ background: 'var(--border-light)' }} />
-                    </div>
-                  </>
-                )}
                 
                 {/* Passcode Form */}
                 <form onSubmit={handleUnlock} className="space-y-4">
@@ -653,7 +427,7 @@ export default function PasswordsPage() {
                     onChange={e => setPasscode(e.target.value)}
                     className="input"
                     placeholder="Enter master password"
-                    autoFocus={!hasTouchId}
+                    autoFocus
                   />
                   
                   {error && (
@@ -679,7 +453,7 @@ export default function PasswordsPage() {
                   <button
                     type="submit"
                     disabled={loading || !passcode}
-                    className={`btn w-full ${hasTouchId ? 'btn-secondary' : 'btn-primary'}`}
+                    className="btn btn-primary w-full"
                   >
                     {loading ? 'Unlocking...' : 'Unlock'}
                   </button>
@@ -728,48 +502,6 @@ export default function PasswordsPage() {
                     className="ml-auto text-[var(--error)] hover:opacity-70"
                   >
                     ✕
-                  </button>
-                </div>
-              )}
-
-              {/* Touch ID Setup Banner - Show on macOS even if detection fails */}
-              {!hasTouchId && (
-                <div 
-                  className="card flex items-center"
-                  style={{ 
-                    gap: 'var(--space-md)', 
-                    padding: 'var(--space-md)',
-                    marginBottom: 'var(--space-lg)',
-                    background: 'var(--surface-accent)',
-                    border: '1px solid var(--accent-primary)',
-                  }}
-                >
-                  <div 
-                    className="rounded-full flex items-center justify-center flex-shrink-0"
-                    style={{ 
-                      width: '56px', 
-                      height: '56px',
-                      background: 'var(--accent-primary)',
-                    }}
-                  >
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.5">
-                      <path d="M12 10v4M7.5 7a6.5 6.5 0 0 1 9 0M5.5 4.5a10 10 0 0 1 13 0M4 12a8 8 0 0 0 2 5.3M20 12a8 8 0 0 1-2 5.3M8.5 16.5a5 5 0 0 0 7 0"/>
-                    </svg>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold" style={{ color: 'var(--text-primary)', fontSize: 'var(--text-base)' }}>
-                      Enable Touch ID
-                    </p>
-                    <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--text-sm)', marginTop: '2px' }}>
-                      Unlock faster with your fingerprint
-                    </p>
-                  </div>
-                  <button
-                    onClick={handleRegisterTouchId}
-                    disabled={loading}
-                    className="btn btn-primary"
-                  >
-                    {loading ? 'Setting up...' : 'Enable'}
                   </button>
                 </div>
               )}
@@ -894,13 +626,61 @@ export default function PasswordsPage() {
                   ))}
                 </div>
               )}
+
+              {/* Reset Master Password Section */}
+              <div 
+                className="card"
+                style={{ 
+                  marginTop: 'var(--space-xl)',
+                  padding: 'var(--space-md)',
+                  border: '1px solid var(--border-medium)',
+                }}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center" style={{ gap: 'var(--space-md)' }}>
+                    <div 
+                      className="rounded-full flex items-center justify-center flex-shrink-0"
+                      style={{ 
+                        width: '44px', 
+                        height: '44px',
+                        background: 'var(--bg-secondary)',
+                      }}
+                    >
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5">
+                        <path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                        Master Password
+                      </p>
+                      <p style={{ color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
+                        Change your master password
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowResetModal(true);
+                      setError('');
+                      setCurrentPassword('');
+                      setNewPassword('');
+                      setConfirmNewPassword('');
+                      setResetSuccess(false);
+                    }}
+                    className="btn btn-secondary btn-sm"
+                  >
+                    Reset
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
       </main>
 
-      {/* Touch ID Registration Modal */}
-      {showTouchIdModal && (
+      {/* Reset Password Modal */}
+      {showResetModal && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
           style={{ padding: 'var(--space-md)' }}
@@ -909,94 +689,149 @@ export default function PasswordsPage() {
             className="card card-elevated w-full animate-scale-in"
             style={{ maxWidth: '400px', padding: 'var(--space-xl)' }}
           >
-            {/* Icon */}
-            <div className="text-center" style={{ marginBottom: 'var(--space-lg)' }}>
-              <div 
-                className="inline-flex items-center justify-center rounded-full"
-                style={{ 
-                  width: '72px', 
-                  height: '72px',
-                  background: 'var(--accent-primary)',
-                  marginBottom: 'var(--space-md)',
-                }}
-              >
-                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.5">
-                  <path d="M12 10v4M7.5 7a6.5 6.5 0 0 1 9 0M5.5 4.5a10 10 0 0 1 13 0M4 12a8 8 0 0 0 2 5.3M20 12a8 8 0 0 1-2 5.3M8.5 16.5a5 5 0 0 0 7 0"/>
-                </svg>
-              </div>
-              <h2 
-                className="font-serif font-semibold"
-                style={{ fontSize: 'var(--text-xl)', color: 'var(--text-primary)', marginBottom: 'var(--space-xs)' }}
-              >
-                Enable Touch ID
-              </h2>
-              <p style={{ color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
-                Enter your master passcode to confirm
-              </p>
-              <p style={{ color: 'var(--text-muted)', fontSize: 'var(--text-xs)', marginTop: 'var(--space-xs)' }}>
-                💡 For best results, use Safari or Chrome
-              </p>
-            </div>
-
-            {/* Form */}
-            <div className="space-y-4">
-              <input
-                type="password"
-                value={touchIdPasscode}
-                onChange={e => setTouchIdPasscode(e.target.value)}
-                className="input"
-                placeholder="Master passcode"
-                autoFocus
-                onKeyDown={e => {
-                  if (e.key === 'Enter') confirmTouchIdRegistration();
-                  if (e.key === 'Escape') {
-                    setShowTouchIdModal(false);
-                    setTouchIdPasscode('');
-                  }
-                }}
-              />
-              
-              {error && (
+            {resetSuccess ? (
+              <div className="text-center">
                 <div 
-                  className="flex items-center rounded-xl"
+                  className="inline-flex items-center justify-center rounded-full"
                   style={{ 
-                    gap: 'var(--space-sm)', 
-                    padding: 'var(--space-sm) var(--space-md)',
-                    background: 'var(--error-light)', 
-                    color: 'var(--error)',
-                    fontSize: 'var(--text-sm)',
+                    width: '72px', 
+                    height: '72px',
+                    background: 'var(--success-light)',
+                    marginBottom: 'var(--space-md)',
                   }}
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="12" cy="12" r="10"/>
-                    <line x1="12" y1="8" x2="12" y2="12"/>
-                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="3">
+                    <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
-                  {error}
                 </div>
-              )}
-              
-              <div className="flex" style={{ gap: 'var(--space-sm)' }}>
-                <button
-                  onClick={() => {
-                    setShowTouchIdModal(false);
-                    setTouchIdPasscode('');
-                    setError('');
-                  }}
-                  className="btn btn-secondary flex-1"
-                  disabled={loading}
+                <h2 
+                  className="font-serif font-semibold"
+                  style={{ fontSize: 'var(--text-xl)', color: 'var(--success)' }}
                 >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmTouchIdRegistration}
-                  disabled={loading || !touchIdPasscode}
-                  className="btn btn-primary flex-1"
-                >
-                  {loading ? 'Setting up...' : 'Enable Touch ID'}
-                </button>
+                  Password Updated!
+                </h2>
               </div>
-            </div>
+            ) : (
+              <>
+                {/* Header */}
+                <div className="text-center" style={{ marginBottom: 'var(--space-lg)' }}>
+                  <div 
+                    className="inline-flex items-center justify-center rounded-full"
+                    style={{ 
+                      width: '72px', 
+                      height: '72px',
+                      background: 'var(--warning-light)',
+                      marginBottom: 'var(--space-md)',
+                    }}
+                  >
+                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" strokeWidth="1.5">
+                      <path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                    </svg>
+                  </div>
+                  <h2 
+                    className="font-serif font-semibold"
+                    style={{ fontSize: 'var(--text-xl)', color: 'var(--text-primary)', marginBottom: 'var(--space-xs)' }}
+                  >
+                    Reset Master Password
+                  </h2>
+                  <p style={{ color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
+                    Enter your current password to verify it's you
+                  </p>
+                </div>
+
+                {/* Form */}
+                <div className="space-y-4">
+                  <div>
+                    <label 
+                      className="block font-medium"
+                      style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: 'var(--space-xs)' }}
+                    >
+                      Current Password
+                    </label>
+                    <input
+                      type="password"
+                      value={currentPassword}
+                      onChange={e => setCurrentPassword(e.target.value)}
+                      className="input"
+                      placeholder="Enter current password"
+                      autoFocus
+                    />
+                  </div>
+                  
+                  <div>
+                    <label 
+                      className="block font-medium"
+                      style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: 'var(--space-xs)' }}
+                    >
+                      New Password
+                    </label>
+                    <input
+                      type="password"
+                      value={newPassword}
+                      onChange={e => setNewPassword(e.target.value)}
+                      className="input"
+                      placeholder="Minimum 6 characters"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label 
+                      className="block font-medium"
+                      style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: 'var(--space-xs)' }}
+                    >
+                      Confirm New Password
+                    </label>
+                    <input
+                      type="password"
+                      value={confirmNewPassword}
+                      onChange={e => setConfirmNewPassword(e.target.value)}
+                      className="input"
+                      placeholder="Re-enter new password"
+                    />
+                  </div>
+                  
+                  {error && (
+                    <div 
+                      className="flex items-center rounded-xl"
+                      style={{ 
+                        gap: 'var(--space-sm)', 
+                        padding: 'var(--space-sm) var(--space-md)',
+                        background: 'var(--error-light)', 
+                        color: 'var(--error)',
+                        fontSize: 'var(--text-sm)',
+                      }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="12" y1="8" x2="12" y2="12"/>
+                        <line x1="12" y1="16" x2="12.01" y2="16"/>
+                      </svg>
+                      {error}
+                    </div>
+                  )}
+                  
+                  <div className="flex" style={{ gap: 'var(--space-sm)', marginTop: 'var(--space-md)' }}>
+                    <button
+                      onClick={() => {
+                        setShowResetModal(false);
+                        setError('');
+                      }}
+                      className="btn btn-secondary flex-1"
+                      disabled={loading}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleResetPassword}
+                      disabled={loading || !currentPassword || !newPassword || !confirmNewPassword}
+                      className="btn btn-primary flex-1"
+                    >
+                      {loading ? 'Updating...' : 'Update Password'}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

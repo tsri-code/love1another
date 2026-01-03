@@ -59,18 +59,30 @@ export default function HomePage() {
             className="text-center animate-fade-in"
             style={{ paddingTop: 'var(--space-2xl)', paddingBottom: 'var(--space-lg)' }}
           >
+            {/* Favicon */}
+            <div 
+              className="mx-auto"
+              style={{ 
+                width: '64px', 
+                height: '64px', 
+                marginBottom: 'var(--space-md)',
+                borderRadius: '16px',
+                overflow: 'hidden',
+                boxShadow: 'var(--shadow-md)',
+              }}
+            >
+              <img 
+                src="/favicon.jpeg" 
+                alt="Love One Another" 
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+            </div>
             <h1 
-              className="font-serif font-semibold text-[var(--text-primary)]"
-              style={{ fontSize: 'var(--text-2xl)', marginBottom: 'var(--space-xs)' }}
+              className="font-serif font-bold text-[var(--text-primary)]"
+              style={{ fontSize: 'var(--text-3xl)' }}
             >
               Love One Another
-          </h1>
-            <p 
-              className="font-serif italic text-[var(--text-muted)]"
-              style={{ fontSize: 'var(--text-base)', lineHeight: 'var(--leading-relaxed)' }}
-            >
-              Bear one another's burdens
-            </p>
+            </h1>
           </section>
 
           {isLoading ? (

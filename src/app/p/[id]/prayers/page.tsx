@@ -359,7 +359,7 @@ export default function PrayerListPage({ params }: { params: Promise<{ id: strin
     sessionStorage.removeItem(`passcode_${id}`);
     setPasscode(null);
     showToast('Prayers locked', 'info');
-    router.push(`/p/${id}`);
+    router.push('/');
   };
 
   const handleDeletePerson = async () => {

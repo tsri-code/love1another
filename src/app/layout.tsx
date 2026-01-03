@@ -9,10 +9,10 @@ export const metadata: Metadata = {
   manifest: "/manifest.json",
   icons: {
     icon: [
-      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/favicon.jpeg", type: "image/jpeg" },
     ],
     apple: [
-      { url: "/apple-icon.svg", type: "image/svg+xml" },
+      { url: "/favicon.jpeg", type: "image/jpeg" },
     ],
   },
   appleWebApp: {
