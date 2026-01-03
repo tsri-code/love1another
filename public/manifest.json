@@ -1,0 +1,25 @@
+{
+  "name": "Love One Another",
+  "short_name": "L1A Prayer",
+  "description": "A private prayer request app for your loved ones",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1715",
+  "theme_color": "#d4a84b",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-icon.svg",
+      "sizes": "180x180",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
+
