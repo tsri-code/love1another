@@ -1,12 +1,24 @@
 import { NextResponse } from 'next/server';
 import { getPersonById, getWebAuthnCredentials } from '@/lib/db';
 import { decryptStoredPasscode } from '@/lib/crypto';
+import { headers } from 'next/headers';
 import crypto from 'crypto';
 
 export const dynamic = 'force-dynamic';
 
 // Challenge store (in production, use Redis or DB)
-const challenges = new Map<string, { challenge: string; personId: string; expiresAt: number }>();
+const challenges = new Map<string, { challenge: string; personId: string; rpId: string; expiresAt: number }>();
+
+/**
+ * Get the rpId from the request headers
+ */
+async function getRpId(): Promise<string> {
+  const headersList = await headers();
+  const host = headersList.get('host') || 'localhost';
+  // Extract just the hostname without port
+  const hostname = host.split(':')[0];
+  return hostname;
+}
 
 /**
  * GET /api/people/[id]/biometric - Get WebAuthn authentication options for this person
@@ -17,6 +29,7 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    const rpId = await getRpId();
     
     // Check if person exists
     const person = await getPersonById(id);
@@ -43,6 +56,7 @@ export async function GET(
     challenges.set(challengeId, { 
       challenge, 
       personId: id,
+      rpId,
       expiresAt: Date.now() + 5 * 60 * 1000 
     });
     
@@ -58,7 +72,7 @@ export async function GET(
       options: {
         challenge,
         timeout: 60000,
-        rpId: 'localhost',
+        rpId: rpId,
         userVerification: 'required',
         allowCredentials: credentials.map(credId => ({
           id: credId,

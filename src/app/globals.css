@@ -591,14 +591,440 @@ a:hover {
 }
 
 /* ============================================
-   RESPONSIVE
+   RESPONSIVE - Mobile First Optimization
    ============================================ */
 
+/* Tablet and below */
+@media (max-width: 768px) {
+  :root {
+    --container-padding: var(--space-md);
+    --card-padding: var(--space-md);
+  }
+  
+  .section {
+    padding-top: var(--space-xl);
+    padding-bottom: var(--space-xl);
+  }
+}
+
+/* Mobile phones */
 @media (max-width: 640px) {
   :root {
     --text-3xl: 1.75rem;
     --text-2xl: 1.375rem;
-    --space-2xl: 40px;
-    --space-3xl: 56px;
+    --text-xl: 1.125rem;
+    --text-lg: 1rem;
+    --space-2xl: 32px;
+    --space-3xl: 48px;
+    --space-4xl: 64px;
+    --container-padding: var(--space-md);
+    --card-padding: var(--space-md);
+    --card-radius: 16px;
+    --button-height: 48px;
+  }
+  
+  h1 { font-size: var(--text-2xl); }
+  h2 { font-size: var(--text-xl); }
+  h3 { font-size: var(--text-lg); }
+  
+  .btn {
+    height: 48px;
+    padding: 0 var(--space-md);
+    font-size: var(--text-sm);
+  }
+  
+  .btn-lg {
+    height: 52px;
+    padding: 0 var(--space-lg);
+    font-size: var(--text-base);
+  }
+  
+  .input {
+    height: 48px;
+  }
+  
+  .input-lg {
+    height: 52px;
+    font-size: var(--text-base);
+  }
+}
+
+/* Small mobile phones */
+@media (max-width: 375px) {
+  :root {
+    --text-3xl: 1.5rem;
+    --text-2xl: 1.25rem;
+    --space-lg: 20px;
+    --container-padding: var(--space-sm);
+    --card-padding: var(--space-sm);
+  }
+}
+
+/* iOS safe areas */
+@supports (padding: max(0px)) {
+  .page {
+    padding-left: max(var(--container-padding), env(safe-area-inset-left));
+    padding-right: max(var(--container-padding), env(safe-area-inset-right));
+    padding-bottom: max(var(--space-lg), env(safe-area-inset-bottom));
+  }
+  
+  .page-center {
+    padding-bottom: max(var(--space-lg), env(safe-area-inset-bottom));
+  }
+}
+
+/* Touch-friendly interactions */
+@media (hover: none) and (pointer: coarse) {
+  .card-interactive:hover {
+    transform: none;
+    box-shadow: var(--shadow-sm);
+  }
+  
+  .card-interactive:active {
+    transform: scale(0.98);
+    box-shadow: var(--shadow-md);
+  }
+  
+  .btn:hover:not(:disabled) {
+    transform: none;
+  }
+  
+  .btn:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+  
+  .btn-primary:hover:not(:disabled) {
+    transform: none;
+  }
+  
+  .btn-primary:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+}
+
+/* Prevent text selection on touch devices for interactive elements */
+@media (hover: none) {
+  .btn, .card-interactive, .icon-btn {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    user-select: none;
+  }
+}
+
+/* ============================================
+   MOBILE-SPECIFIC UTILITIES
+   ============================================ */
+
+/* Hide on mobile */
+@media (max-width: 640px) {
+  .hide-mobile {
+    display: none !important;
+  }
+}
+
+/* Show only on mobile */
+@media (min-width: 641px) {
+  .show-mobile {
+    display: none !important;
+  }
+}
+
+/* Stack on mobile */
+@media (max-width: 640px) {
+  .stack-mobile {
+    flex-direction: column !important;
+  }
+  
+  .stack-mobile > * {
+    width: 100% !important;
+  }
+}
+
+/* Full width on mobile */
+@media (max-width: 640px) {
+  .full-mobile {
+    width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+}
+
+/* Mobile grid adjustments */
+@media (max-width: 640px) {
+  .grid-mobile-1 {
+    grid-template-columns: 1fr !important;
+  }
+  
+  .grid-mobile-2 {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+/* Mobile text alignment */
+@media (max-width: 640px) {
+  .text-center-mobile {
+    text-align: center !important;
+  }
+}
+
+/* Mobile spacing adjustments */
+@media (max-width: 640px) {
+  .gap-sm-mobile {
+    gap: var(--space-sm) !important;
+  }
+  
+  .gap-xs-mobile {
+    gap: var(--space-xs) !important;
+  }
+  
+  .mb-md-mobile {
+    margin-bottom: var(--space-md) !important;
+  }
+  
+  .p-sm-mobile {
+    padding: var(--space-sm) !important;
+  }
+}
+
+/* ============================================
+   PRAYER COLUMNS - Mobile Optimization
+   ============================================ */
+
+.prayer-columns {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-lg);
+}
+
+@media (max-width: 1024px) {
+  .prayer-columns {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-md);
+  }
+}
+
+@media (max-width: 768px) {
+  .prayer-columns {
+    grid-template-columns: 1fr;
+    gap: var(--space-md);
+  }
+}
+
+/* Prayer column header */
+.prayer-column-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+  padding-bottom: var(--space-sm);
+  border-bottom: 2px solid var(--border-light);
+}
+
+@media (max-width: 768px) {
+  .prayer-column-header {
+    margin-bottom: var(--space-sm);
+    padding-bottom: var(--space-xs);
+  }
+}
+
+/* ============================================
+   PEOPLE GRID - Mobile Optimization
+   ============================================ */
+
+.people-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--space-lg);
+  justify-items: center;
+}
+
+@media (max-width: 640px) {
+  .people-grid {
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: var(--space-md);
+  }
+}
+
+@media (max-width: 375px) {
+  .people-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-sm);
+  }
+}
+
+/* ============================================
+   KEYPAD - Mobile Optimization  
+   ============================================ */
+
+.keypad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-sm);
+  max-width: 280px;
+  margin: 0 auto;
+}
+
+@media (max-width: 375px) {
+  .keypad-grid {
+    gap: var(--space-xs);
+    max-width: 240px;
+  }
+}
+
+.keypad-btn {
+  width: 72px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-2xl);
+  font-weight: 500;
+  font-family: var(--font-sans);
+  background: var(--surface-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  color: var(--text-primary);
+}
+
+@media (max-width: 375px) {
+  .keypad-btn {
+    width: 60px;
+    height: 60px;
+    font-size: var(--text-xl);
+  }
+}
+
+.keypad-btn:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--border-medium);
+}
+
+.keypad-btn:active {
+  transform: scale(0.95);
+  background: var(--accent-primary-light);
+}
+
+/* ============================================
+   MODAL - Mobile Optimization
+   ============================================ */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-md);
+  z-index: 1000;
+}
+
+@media (max-width: 640px) {
+  .modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+}
+
+.modal-content {
+  background: var(--surface-primary);
+  border-radius: var(--card-radius);
+  max-width: 480px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-xl);
+}
+
+@media (max-width: 640px) {
+  .modal-content {
+    max-width: 100%;
+    max-height: 85vh;
+    border-radius: var(--card-radius) var(--card-radius) 0 0;
+    animation: slideUp 0.3s ease-out;
+  }
+}
+
+/* ============================================
+   DROPDOWN MENU - Mobile Optimization
+   ============================================ */
+
+.dropdown-menu {
+  position: absolute;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-light);
+  border-radius: var(--card-radius-sm);
+  box-shadow: var(--shadow-lg);
+  min-width: 180px;
+  z-index: 100;
+  overflow: hidden;
+}
+
+@media (max-width: 640px) {
+  .dropdown-menu {
+    min-width: 160px;
+    font-size: var(--text-sm);
+  }
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  width: 100%;
+  background: none;
+  border: none;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  text-align: left;
+}
+
+.dropdown-item:hover {
+  background: var(--bg-secondary);
+}
+
+@media (max-width: 640px) {
+  .dropdown-item {
+    padding: var(--space-md);
+    min-height: var(--touch-target-min);
+  }
+}
+
+/* ============================================
+   LOCK SCREEN - Mobile Optimization
+   ============================================ */
+
+.lock-screen {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-lg);
+}
+
+@media (max-width: 640px) {
+  .lock-screen {
+    justify-content: flex-start;
+    padding-top: var(--space-3xl);
+    padding-left: var(--space-md);
+    padding-right: var(--space-md);
+  }
+}
+
+.lock-card {
+  width: 100%;
+  max-width: 400px;
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  .lock-card {
+    max-width: 100%;
   }
 }

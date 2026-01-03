@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getMasterSettings, updateWebAuthnCredentials, getWebAuthnCredentials } from '@/lib/db';
 import { verifyPasscode } from '@/lib/crypto';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { createAdminSession } from '../route';
 import crypto from 'crypto';
 
@@ -11,7 +11,18 @@ const ADMIN_SESSION_COOKIE = 'admin_session';
 const SESSION_DURATION = 5 * 60 * 1000;
 
 // Challenge store (in production, use Redis or DB)
-const challenges = new Map<string, { challenge: string; expiresAt: number }>();
+const challenges = new Map<string, { challenge: string; rpId: string; expiresAt: number }>();
+
+/**
+ * Get the rpId from the request headers
+ */
+async function getRpId(): Promise<string> {
+  const headersList = await headers();
+  const host = headersList.get('host') || 'localhost';
+  // Extract just the hostname without port
+  const hostname = host.split(':')[0];
+  return hostname;
+}
 
 /**
  * GET /api/passwords/webauthn - Get WebAuthn registration/authentication options
@@ -20,13 +31,15 @@ export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const action = url.searchParams.get('action');
+    const rpId = await getRpId();
     
     const challenge = crypto.randomBytes(32).toString('base64url');
     const challengeId = crypto.randomUUID();
     
-    // Store challenge for verification
+    // Store challenge for verification (including rpId for validation)
     challenges.set(challengeId, { 
       challenge, 
+      rpId,
       expiresAt: Date.now() + 5 * 60 * 1000 
     });
     
@@ -45,7 +58,7 @@ export async function GET(request: Request) {
           challenge,
           rp: {
             name: 'Love One Another',
-            id: 'localhost',
+            id: rpId,
           },
           user: {
             id: Buffer.from('admin').toString('base64url'),
@@ -74,7 +87,7 @@ export async function GET(request: Request) {
         options: {
           challenge,
           timeout: 60000,
-          rpId: 'localhost',
+          rpId: rpId,
           userVerification: 'required',
           allowCredentials: credentials.map(id => ({
             id,
