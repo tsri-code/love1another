@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAllPeople, createPerson } from '@/lib/db';
 import { hashPasscode, encrypt, encryptPasscodeForStorage } from '@/lib/crypto';
+import { getInitials } from '@/lib/utils';
 import type { PrayerData, PersonType } from '@/lib/db';
 
 // Prevent caching on sensitive routes
@@ -67,7 +68,7 @@ export async function POST(request: Request) {
     const person = await createPerson({
       displayName: displayName.trim(),
       type,
-      avatarInitials: avatarInitials || displayName.trim().substring(0, 2).toUpperCase(),
+      avatarInitials: avatarInitials || getInitials(displayName),
       avatarColor: avatarColor || generateRandomColor(),
       avatarPath: avatarPath || null,
       passcodeHash,

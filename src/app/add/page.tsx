@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { AppHeader } from '@/components/AppHeader';
 import { useToast } from '@/lib/toast';
+import { getInitials } from '@/lib/utils';
 
 // Extended color palette
 const AVATAR_COLORS = [
@@ -50,7 +51,7 @@ export default function AddPersonPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const initials = displayName.trim().substring(0, 2).toUpperCase() || '?';
+  const initials = getInitials(displayName);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { AppHeader } from '@/components/AppHeader';
 import { AvatarCircle } from '@/components/AvatarCircle';
 import { useToast } from '@/lib/toast';
+import { getInitials } from '@/lib/utils';
 
 // Extended color palette
 const AVATAR_COLORS = [
@@ -146,7 +147,7 @@ export default function EditPersonPage({ params }: { params: Promise<{ id: strin
     reader.readAsDataURL(file);
   };
 
-  const initials = displayName.trim().substring(0, 2).toUpperCase() || '?';
+  const initials = getInitials(displayName);
 
   const validate = () => {
     const newErrors: Record<string, string> = {};

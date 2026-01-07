@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { AppHeader } from '@/components/AppHeader';
+import { getInitials } from '@/lib/utils';
 
 interface EntityWithPasscode {
   id: string;
@@ -553,7 +554,7 @@ export default function PasswordsPage() {
                             background: entity.avatarColor || 'var(--accent-primary)',
                           }}
                         >
-                          {entity.avatarInitials || entity.displayName.substring(0, 2).toUpperCase()}
+                          {entity.avatarInitials || getInitials(entity.displayName)}
                         </div>
                         
                         {/* Info */}

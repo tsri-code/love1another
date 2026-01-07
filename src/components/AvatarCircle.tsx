@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { getInitials } from '@/lib/utils';
 
 interface AvatarCircleProps {
   name: string;
@@ -33,7 +34,7 @@ export function AvatarCircle({
   interactive = true,
 }: AvatarCircleProps) {
   const [imageError, setImageError] = useState(false);
-  const displayInitials = initials || name.substring(0, 2).toUpperCase();
+  const displayInitials = initials || getInitials(name);
   const config = sizeConfig[size];
 
   const Component = onClick && interactive ? 'button' : 'div';
