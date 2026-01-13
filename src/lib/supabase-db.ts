@@ -864,43 +864,46 @@ export async function userHasConversationAccess(
 ): Promise<boolean> {
   const supabase = await createServerSupabaseClient();
 
-  // Use the database function we created to check access
-  const { data, error } = await supabase.rpc("user_has_conversation_access", {
-    p_user_id: userId,
-    p_conversation_id: conversationId,
-  });
+  // Get the conversation first
+  const { data: conversation, error: convError } = await supabase
+    .from("conversations")
+    .select("*")
+    .eq("id", conversationId)
+    .maybeSingle();
 
-  if (error) {
-    console.error("Error checking conversation access:", error);
-    // Fallback: try direct check
-    const conversation = await getConversationById(conversationId);
-    if (!conversation) return false;
-
-    // Check private conversation
-    if (conversation.user1_id === userId || conversation.user2_id === userId) {
-      return true;
-    }
-
-    // Check group creator
-    if (conversation.creator_id === userId) {
-      return true;
-    }
-
-    // Check group membership
-    if (conversation.type === "group") {
-      const { data: member } = await supabase
-        .from("conversation_members")
-        .select("id")
-        .eq("conversation_id", conversationId)
-        .eq("user_id", userId)
-        .maybeSingle();
-      return !!member;
-    }
-
+  if (convError || !conversation) {
+    console.error("Error fetching conversation for access check:", convError);
     return false;
   }
 
-  return !!data;
+  // Check private conversation (user1_id or user2_id)
+  if (conversation.user1_id === userId || conversation.user2_id === userId) {
+    return true;
+  }
+
+  // Check group creator
+  if (conversation.creator_id === userId) {
+    return true;
+  }
+
+  // Check group membership (only for group type)
+  if (conversation.type === "group") {
+    const { data: member, error: memberError } = await supabase
+      .from("conversation_members")
+      .select("id")
+      .eq("conversation_id", conversationId)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (memberError) {
+      console.error("Error checking group membership:", memberError);
+      return false;
+    }
+
+    return !!member;
+  }
+
+  return false;
 }
 
 /**
@@ -925,7 +928,10 @@ export async function getOrCreateConversation(
     .maybeSingle();
 
   if (existingResult.error) {
-    console.error("Error checking existing conversation:", existingResult.error);
+    console.error(
+      "Error checking existing conversation:",
+      existingResult.error
+    );
     throw existingResult.error;
   }
 
