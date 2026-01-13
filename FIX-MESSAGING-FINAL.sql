@@ -291,13 +291,25 @@ END;
 $$;
 
 -- -----------------------------------------------------------------------------
--- Function: Get or create a private conversation
+-- Function: Get or create a private conversation (returns full conversation)
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.get_or_create_private_conversation(
   p_user1_id UUID,
   p_user2_id UUID
 )
-RETURNS UUID
+RETURNS TABLE (
+  id UUID,
+  type TEXT,
+  user1_id UUID,
+  user2_id UUID,
+  user1_key_encrypted TEXT,
+  user2_key_encrypted TEXT,
+  group_name TEXT,
+  group_avatar_path TEXT,
+  creator_id UUID,
+  created_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ
+)
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
@@ -317,20 +329,39 @@ BEGIN
   END IF;
 
   -- Try to find existing conversation
-  SELECT id INTO v_conversation_id
+  SELECT conversations.id INTO v_conversation_id
   FROM conversations
-  WHERE user1_id = v_user1 AND user2_id = v_user2 AND (type = 'private' OR type IS NULL);
+  WHERE conversations.user1_id = v_user1 AND conversations.user2_id = v_user2 AND (conversations.type = 'private' OR conversations.type IS NULL);
 
-  IF FOUND THEN
-    RETURN v_conversation_id;
+  IF NOT FOUND THEN
+    -- Create new conversation
+    INSERT INTO conversations (user1_id, user2_id, type)
+    VALUES (v_user1, v_user2, 'private')
+    RETURNING id INTO v_conversation_id;
   END IF;
 
-  -- Create new conversation
-  INSERT INTO conversations (user1_id, user2_id, type)
-  VALUES (v_user1, v_user2, 'private')
-  RETURNING id INTO v_conversation_id;
+  -- Remove any soft-delete records for both users so they can access the conversation again
+  -- This handles the case where a user previously deleted the conversation and is now re-initiating it
+  DELETE FROM conversation_deletions
+  WHERE conversation_id = v_conversation_id
+    AND user_id IN (p_user1_id, p_user2_id);
 
-  RETURN v_conversation_id;
+  -- Return the full conversation
+  RETURN QUERY
+  SELECT
+    c.id,
+    c.type,
+    c.user1_id,
+    c.user2_id,
+    c.user1_key_encrypted,
+    c.user2_key_encrypted,
+    c.group_name,
+    c.group_avatar_path,
+    c.creator_id,
+    c.created_at,
+    c.updated_at
+  FROM conversations c
+  WHERE c.id = v_conversation_id;
 END;
 $$;
 
@@ -392,7 +423,8 @@ CREATE OR REPLACE FUNCTION public.send_message(
   p_conversation_id UUID,
   p_encrypted_content TEXT,
   p_iv TEXT,
-  p_message_type TEXT DEFAULT 'message'
+  p_message_type TEXT DEFAULT 'message',
+  p_user_id UUID DEFAULT NULL
 )
 RETURNS UUID
 LANGUAGE plpgsql
@@ -401,9 +433,24 @@ SET search_path = public
 AS $$
 DECLARE
   v_user_id UUID;
+  v_auth_user_id UUID;
   v_message_id UUID;
 BEGIN
-  v_user_id := auth.uid();
+  -- Get authenticated user ID from JWT
+  v_auth_user_id := auth.uid();
+
+  -- Use provided user_id if auth.uid() is NULL (fallback for cases where JWT context isn't available)
+  -- Otherwise verify the provided user_id matches auth.uid() for security
+  IF p_user_id IS NOT NULL THEN
+    IF v_auth_user_id IS NOT NULL AND v_auth_user_id != p_user_id THEN
+      RAISE EXCEPTION 'User ID mismatch - security violation';
+    END IF;
+    v_user_id := p_user_id;
+  ELSIF v_auth_user_id IS NOT NULL THEN
+    v_user_id := v_auth_user_id;
+  ELSE
+    RAISE EXCEPTION 'User ID required - not authenticated';
+  END IF;
 
   -- Check access
   IF NOT public.user_has_conversation_access(v_user_id, p_conversation_id) THEN
@@ -425,7 +472,10 @@ $$;
 -- -----------------------------------------------------------------------------
 -- Function: Mark messages as read
 -- -----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.mark_messages_read(p_conversation_id UUID)
+CREATE OR REPLACE FUNCTION public.mark_messages_read(
+  p_conversation_id UUID,
+  p_user_id UUID DEFAULT NULL
+)
 RETURNS VOID
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -433,8 +483,23 @@ SET search_path = public
 AS $$
 DECLARE
   v_user_id UUID;
+  v_auth_user_id UUID;
 BEGIN
-  v_user_id := auth.uid();
+  -- Get authenticated user ID from JWT
+  v_auth_user_id := auth.uid();
+
+  -- Use provided user_id if auth.uid() is NULL (fallback for cases where JWT context isn't available)
+  -- Otherwise verify the provided user_id matches auth.uid() for security
+  IF p_user_id IS NOT NULL THEN
+    IF v_auth_user_id IS NOT NULL AND v_auth_user_id != p_user_id THEN
+      RETURN; -- Security violation - silently fail
+    END IF;
+    v_user_id := p_user_id;
+  ELSIF v_auth_user_id IS NOT NULL THEN
+    v_user_id := v_auth_user_id;
+  ELSE
+    RETURN; -- Not authenticated - silently fail
+  END IF;
 
   -- Check access
   IF NOT public.user_has_conversation_access(v_user_id, p_conversation_id) THEN

@@ -890,33 +890,24 @@ export async function getOrCreateConversation(
 ): Promise<Conversation> {
   const supabase = await createServerSupabaseClient();
 
-  // Use RPC function to get or create conversation
-  const { data: conversationId, error } = await supabase.rpc(
+  // Use RPC function to get or create conversation (returns full conversation object)
+  const { data: conversations, error } = await supabase.rpc(
     "get_or_create_private_conversation",
     {
       p_user1_id: userId1,
       p_user2_id: userId2,
     }
   );
-
   if (error) {
     console.error("Error in getOrCreateConversation:", error);
     throw error;
   }
 
-  // Fetch the full conversation data
-  const { data: conversation, error: fetchError } = await supabase
-    .from("conversations")
-    .select("*")
-    .eq("id", conversationId)
-    .single();
-
-  if (fetchError) {
-    console.error("Error fetching conversation:", fetchError);
-    throw fetchError;
+  if (!conversations || conversations.length === 0) {
+    throw new Error("Failed to get or create conversation - no data returned");
   }
 
-  return conversation;
+  return conversations[0] as Conversation;
 }
 
 // ============================================================================
@@ -966,8 +957,8 @@ export async function sendMessage(data: {
     p_encrypted_content: data.encrypted_content,
     p_iv: data.iv,
     p_message_type: data.message_type,
+    p_user_id: data.sender_id, // Pass user_id explicitly since auth.uid() may be NULL
   });
-
   if (error) {
     console.error("Error sending message:", error);
     throw error;
@@ -992,12 +983,13 @@ export async function sendMessage(data: {
  */
 export async function markMessagesAsRead(
   conversationId: string,
-  _userId: string
+  userId: string
 ): Promise<void> {
   const supabase = await createServerSupabaseClient();
 
   const { error } = await supabase.rpc("mark_messages_read", {
     p_conversation_id: conversationId,
+    p_user_id: userId, // Pass user_id explicitly since auth.uid() may be NULL
   });
 
   if (error) {

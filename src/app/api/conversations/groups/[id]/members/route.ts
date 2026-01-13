@@ -147,6 +147,9 @@ export async function DELETE(
       data: { user },
       error: userError,
     } = await supabase.auth.getUser();
+    // #region agent log
+    fetch('http://127.0.0.1:7246/ingest/ecaa64e1-9858-48b0-a9e8-060dbefd294c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:149',message:'DELETE group - auth check',data:{userId:user?.id,userError:userError?{message:userError.message}:null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
 
     if (userError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -159,11 +162,18 @@ export async function DELETE(
     const isSelfLeaving = !targetUserId || targetUserId === user.id;
 
     if (isSelfLeaving) {
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/ecaa64e1-9858-48b0-a9e8-060dbefd294c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:161',message:'DELETE group leave - entry',data:{userId:user.id,conversationId,isSelfLeaving},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
       // User is leaving - use delete_conversation RPC
       // The RPC handles: creator deletes whole group, member just leaves
       const { data: success, error } = await supabase.rpc("delete_conversation", {
         p_conversation_id: conversationId,
       });
+
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/ecaa64e1-9858-48b0-a9e8-060dbefd294c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:166',message:'DELETE group leave - RPC result',data:{success,error:error?{code:error.code,message:error.message,details:error.details}:null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
 
       if (error) {
         console.error("Error leaving group:", error);
@@ -174,23 +184,32 @@ export async function DELETE(
       }
 
       if (!success) {
+        // #region agent log
+        fetch('http://127.0.0.1:7246/ingest/ecaa64e1-9858-48b0-a9e8-060dbefd294c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:177',message:'DELETE group leave - RPC returned false',data:{userId:user.id,conversationId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
         return NextResponse.json(
           { error: "Not a member of this group" },
           { status: 403 }
         );
       }
 
-      // Check if user was the creator (group was deleted) or just left
-      const { data: stillExists } = await supabase
-        .from("conversations")
-        .select("id")
-        .eq("id", conversationId)
-        .single();
+      // Check if user was the creator (group was deleted) by checking if we can still access it
+      // Use user_has_conversation_access RPC instead of direct query (bypasses RLS)
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/ecaa64e1-9858-48b0-a9e8-060dbefd294c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:184',message:'DELETE group leave - checking if conversation still accessible',data:{conversationId,userId:user.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      const { data: stillHasAccess } = await supabase.rpc("user_has_conversation_access", {
+        p_user_id: user.id,
+        p_conversation_id: conversationId,
+      });
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/ecaa64e1-9858-48b0-a9e8-060dbefd294c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:188',message:'DELETE group leave - access check result',data:{stillHasAccess},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
 
       return NextResponse.json({
         success: true,
-        message: stillExists ? "Left group successfully" : "Group deleted (creator left)",
-        groupDeleted: !stillExists,
+        message: stillHasAccess ? "Left group successfully" : "Group deleted (creator left)",
+        groupDeleted: !stillHasAccess,
       });
     } else {
       // Creator is kicking a member - use remove_group_member RPC
