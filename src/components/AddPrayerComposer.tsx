@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import type { PrayerCategory } from '@/lib/db';
+import type { PrayerCategory } from './PrayerCard';
 
 interface AddPrayerComposerProps {
   onAdd: (text: string, category: PrayerCategory) => void;
@@ -60,7 +60,7 @@ export function AddPrayerComposer({ onAdd, isLoading, defaultCategory = 'immedia
           <div>
             <p className="font-medium text-[var(--text-primary)]">Add a prayer request</p>
             <p className="text-[var(--text-muted)]" style={{ fontSize: 'var(--text-sm)' }}>
-              What's on your heart?
+              What&apos;s on your heart?
             </p>
           </div>
         </button>

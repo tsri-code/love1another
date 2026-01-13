@@ -1,16 +1,30 @@
-'use client';
+"use client";
 
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback } from "react";
+import {
+  Alert,
+  AlertTitle,
+  AlertDescription,
+  CheckCircleIcon,
+  AlertCircleIcon,
+  InfoIcon,
+} from "@/components/ui/alert";
 
 interface Toast {
   id: string;
-  message: string;
-  type: 'success' | 'error' | 'info';
+  title: string;
+  description?: string;
+  type: "success" | "error" | "info";
 }
 
 interface ToastContextType {
   toasts: Toast[];
-  showToast: (message: string, type?: Toast['type']) => void;
+  showToast: (
+    title: string,
+    typeOrOptions?:
+      | Toast["type"]
+      | { description?: string; type?: Toast["type"] }
+  ) => void;
   dismissToast: (id: string) => void;
 }
 
@@ -19,18 +33,38 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined);
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const showToast = useCallback((message: string, type: Toast['type'] = 'info') => {
-    const id = Math.random().toString(36).substring(7);
-    setToasts(prev => [...prev, { id, message, type }]);
+  const showToast = useCallback(
+    (
+      title: string,
+      typeOrOptions?:
+        | Toast["type"]
+        | { description?: string; type?: Toast["type"] }
+    ) => {
+      const id = Math.random().toString(36).substring(7);
 
-    // Auto-dismiss after 3 seconds
-    setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
-    }, 3000);
-  }, []);
+      // Handle both old (string type) and new (options object) signatures
+      let type: Toast["type"] = "info";
+      let description: string | undefined;
+
+      if (typeof typeOrOptions === "string") {
+        type = typeOrOptions;
+      } else if (typeOrOptions) {
+        type = typeOrOptions.type || "info";
+        description = typeOrOptions.description;
+      }
+
+      setToasts((prev) => [...prev, { id, title, description, type }]);
+
+      // Auto-dismiss after 3 seconds
+      setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+      }, 3000);
+    },
+    []
+  );
 
   const dismissToast = useCallback((id: string) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
+    setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
   return (
@@ -41,77 +75,91 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ToastContainer({ 
-  toasts, 
-  onDismiss 
-}: { 
-  toasts: Toast[]; 
+function ToastContainer({
+  toasts,
+  onDismiss,
+}: {
+  toasts: Toast[];
   onDismiss: (id: string) => void;
 }) {
   if (toasts.length === 0) return null;
 
+  const getIcon = (type: Toast["type"]) => {
+    switch (type) {
+      case "success":
+        return <CheckCircleIcon />;
+      case "error":
+        return <AlertCircleIcon />;
+      default:
+        return <InfoIcon />;
+    }
+  };
+
+  const getVariant = (
+    type: Toast["type"]
+  ): "success" | "destructive" | "default" => {
+    switch (type) {
+      case "success":
+        return "success";
+      case "error":
+        return "destructive";
+      default:
+        return "default";
+    }
+  };
+
   return (
-    <div 
-      className="fixed bottom-0 left-0 right-0 z-50 flex flex-col items-center pointer-events-none"
-      style={{ padding: 'var(--space-lg)', paddingBottom: 'var(--space-xl)', gap: 'var(--space-sm)' }}
+    <div
+      className="fixed left-0 right-0 z-[9999] flex justify-center toast-container"
+      style={{
+        pointerEvents: "none",
+      }}
     >
-      {toasts.map(toast => (
-        <div
-          key={toast.id}
-          className={`
-            pointer-events-auto cursor-pointer
-            flex items-center shadow-xl animate-slide-in
-            ${toast.type === 'success' ? 'bg-[var(--success)]' : ''}
-            ${toast.type === 'error' ? 'bg-[var(--error)]' : ''}
-            ${toast.type === 'info' ? 'bg-[var(--surface-primary)] border border-[var(--border-light)]' : ''}
-          `}
-          style={{
-            padding: 'var(--space-md) var(--space-lg)',
-            borderRadius: 'var(--radius-lg)',
-            gap: 'var(--space-sm)',
-            minWidth: '200px',
-            maxWidth: '400px',
-          }}
-          onClick={() => onDismiss(toast.id)}
-        >
-          {toast.type === 'success' && (
-            <div 
-              className="flex items-center justify-center rounded-full bg-white bg-opacity-20"
-              style={{ width: '24px', height: '24px', flexShrink: 0 }}
-            >
-              <svg className="text-white" style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-          )}
-          {toast.type === 'error' && (
-            <div 
-              className="flex items-center justify-center rounded-full bg-white bg-opacity-20"
-              style={{ width: '24px', height: '24px', flexShrink: 0 }}
-            >
-              <svg className="text-white" style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </div>
-          )}
-          {toast.type === 'info' && (
-            <div 
-              className="flex items-center justify-center rounded-full bg-[var(--accent-primary-light)]"
-              style={{ width: '24px', height: '24px', flexShrink: 0 }}
-            >
-              <svg className="text-[var(--accent-primary)]" style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-          )}
-          <span 
-            className={`font-medium ${toast.type === 'info' ? 'text-[var(--text-primary)]' : 'text-white'}`}
-            style={{ fontSize: 'var(--text-base)', lineHeight: '1.4' }}
+      <div
+        className="flex flex-col gap-3 toast-content"
+        style={{
+          width: "100%",
+        }}
+      >
+        {toasts.map((toast, index) => (
+          <div
+            key={toast.id}
+            style={{
+              animation: "alertSlideIn 0.3s ease forwards",
+              animationDelay: `${index * 50}ms`,
+              opacity: 0,
+              pointerEvents: "auto",
+            }}
           >
-            {toast.message}
-          </span>
-        </div>
-      ))}
+            <Alert
+              variant={getVariant(toast.type)}
+              icon={getIcon(toast.type)}
+              onClose={() => onDismiss(toast.id)}
+              style={{
+                boxShadow: "0 8px 32px rgba(0, 0, 0, 0.4)",
+              }}
+            >
+              <AlertTitle>{toast.title}</AlertTitle>
+              {toast.description && (
+                <AlertDescription>{toast.description}</AlertDescription>
+              )}
+            </Alert>
+          </div>
+        ))}
+      </div>
+
+      <style jsx global>{`
+        @keyframes alertSlideIn {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
     </div>
   );
 }
@@ -119,7 +167,7 @@ function ToastContainer({
 export function useToast() {
   const context = useContext(ToastContext);
   if (!context) {
-    throw new Error('useToast must be used within a ToastProvider');
+    throw new Error("useToast must be used within a ToastProvider");
   }
   return context;
 }

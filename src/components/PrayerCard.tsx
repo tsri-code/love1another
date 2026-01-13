@@ -2,7 +2,23 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { formatDistanceToNow, format } from 'date-fns';
-import type { Prayer, PrayerCategory } from '@/lib/db';
+
+// Prayer types (moved from deleted db.ts)
+export type PrayerCategory = 'immediate' | 'ongoing';
+
+export interface Prayer {
+  id: string;
+  text: string;
+  category: PrayerCategory;
+  createdAt: string;
+  updatedAt: string;
+  pinned: boolean;
+  answered: boolean;
+  answeredAt: string | null;
+  lastPrayedAt: string | null;
+  notAnsweredNote: string | null;
+  tags: string[];
+}
 
 interface PrayerCardProps {
   prayer: Prayer;

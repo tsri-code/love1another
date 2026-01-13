@@ -1,23 +1,67 @@
-import { NextResponse } from 'next/server';
-import { getAllPeople, createPerson } from '@/lib/db';
-import { hashPasscode, encrypt, encryptPasscodeForStorage } from '@/lib/crypto';
-import { getInitials } from '@/lib/utils';
-import type { PrayerData, PersonType } from '@/lib/db';
+import { NextRequest, NextResponse } from "next/server";
+import {
+  getAllProfiles,
+  createProfile,
+  getAuthenticatedUser,
+} from "@/lib/supabase-db";
+import { getInitials } from "@/lib/utils";
+import {
+  checkRateLimit,
+  rateLimits,
+  rateLimitedResponse,
+  validateContent,
+} from "@/lib/api-security";
 
 // Prevent caching on sensitive routes
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 /**
- * GET /api/people - List all people (persons and groups only, not links)
+ * GET /api/people - List all profiles for the authenticated user
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const people = await getAllPeople();
+    // Rate limiting
+    const rateLimit = checkRateLimit(request, rateLimits.read);
+    if (rateLimit.limited) {
+      return rateLimitedResponse(rateLimit.resetAt);
+    }
+
+    const user = await getAuthenticatedUser();
+    if (!user) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    }
+
+    const profiles = await getAllProfiles();
+
+    // Sort by last name (last word in display_name)
+    const sortedProfiles = [...profiles].sort((a, b) => {
+      const getLastName = (name: string) => {
+        const parts = name.trim().split(/\s+/);
+        return parts[parts.length - 1].toLowerCase();
+      };
+      return getLastName(a.display_name).localeCompare(
+        getLastName(b.display_name)
+      );
+    });
+
+    // Transform to match existing frontend expectations
+    const people = sortedProfiles.map((p) => ({
+      id: p.id,
+      displayName: p.display_name,
+      type: p.type,
+      avatarPath: p.avatar_path,
+      avatarInitials: p.avatar_initials,
+      avatarColor: p.avatar_color,
+      verseId: p.verse_id,
+      prayerCount: p.prayer_count,
+      lastPrayedAt: p.last_prayed_at,
+    }));
+
     return NextResponse.json({ people });
   } catch (error) {
-    console.error('Error fetching people:', error);
+    console.error("Error fetching people:", error);
     return NextResponse.json(
-      { error: 'Failed to fetch people' },
+      { error: "Failed to fetch people" },
       { status: 500 }
     );
   }
@@ -26,20 +70,49 @@ export async function GET() {
 /**
  * POST /api/people - Create a new person or group
  */
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
+    // Rate limiting
+    const rateLimit = checkRateLimit(request, rateLimits.profile);
+    if (rateLimit.limited) {
+      return rateLimitedResponse(rateLimit.resetAt);
+    }
+
+    const user = await getAuthenticatedUser();
+    if (!user) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    }
+
     const body = await request.json();
-    const { displayName, type, avatarInitials, avatarColor, avatarPath, passcode } = body;
+    const { displayName, type, avatarInitials, avatarColor, avatarPath } = body;
 
     // Validation
-    if (!displayName || typeof displayName !== 'string' || displayName.trim().length === 0) {
+    if (
+      !displayName ||
+      typeof displayName !== "string" ||
+      displayName.trim().length === 0
+    ) {
       return NextResponse.json(
-        { error: 'Display name is required' },
+        { error: "Display name is required" },
         { status: 400 }
       );
     }
 
-    const validTypes: PersonType[] = ['person', 'group'];
+    // Validate content for safety
+    const contentCheck = validateContent(displayName);
+    if (!contentCheck.valid) {
+      return NextResponse.json({ error: contentCheck.error }, { status: 400 });
+    }
+
+    // Length validation
+    if (displayName.length > 100) {
+      return NextResponse.json(
+        { error: "Display name too long (max 100 characters)" },
+        { status: 400 }
+      );
+    }
+
+    const validTypes = ["person", "group"];
     if (!type || !validTypes.includes(type)) {
       return NextResponse.json(
         { error: 'Type must be "person" or "group"' },
@@ -47,53 +120,36 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!passcode || typeof passcode !== 'string' || passcode.length < 4) {
-      return NextResponse.json(
-        { error: 'Passcode must be at least 4 characters' },
-        { status: 400 }
-      );
-    }
-
-    // Hash passcode
-    const passcodeHash = await hashPasscode(passcode);
-    
-    // Encrypt passcode for admin recovery
-    const passcodeEncrypted = encryptPasscodeForStorage(passcode);
-
-    // Encrypt empty prayer data
-    const initialPrayerData: PrayerData = { prayers: [] };
-    const prayerDataEncrypted = await encrypt(JSON.stringify(initialPrayerData), passcode);
-
-    // Create person/group
-    const person = await createPerson({
-      displayName: displayName.trim(),
+    // Create profile in Supabase
+    const profile = await createProfile({
+      display_name: displayName.trim(),
       type,
-      avatarInitials: avatarInitials || getInitials(displayName),
-      avatarColor: avatarColor || generateRandomColor(),
-      avatarPath: avatarPath || null,
-      passcodeHash,
-      passcodeEncrypted,
-      prayerDataEncrypted,
+      avatar_initials: avatarInitials || getInitials(displayName),
+      avatar_color: avatarColor || generateRandomColor(),
+      avatar_path: avatarPath || null,
     });
 
-    // Return without sensitive data
-    return NextResponse.json({
-      person: {
-        id: person.id,
-        displayName: person.displayName,
-        type: person.type,
-        avatarPath: person.avatarPath,
-        avatarInitials: person.avatarInitials,
-        avatarColor: person.avatarColor,
-        verseId: person.verseId,
-        prayerCount: person.prayerCount,
-        createdAt: person.createdAt,
-      }
-    }, { status: 201 });
-  } catch (error) {
-    console.error('Error creating person:', error);
+    // Return in format frontend expects
     return NextResponse.json(
-      { error: 'Failed to create person' },
+      {
+        person: {
+          id: profile.id,
+          displayName: profile.display_name,
+          type: profile.type,
+          avatarPath: profile.avatar_path,
+          avatarInitials: profile.avatar_initials,
+          avatarColor: profile.avatar_color,
+          verseId: profile.verse_id,
+          prayerCount: profile.prayer_count,
+          createdAt: profile.created_at,
+        },
+      },
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error("Error creating person:", error);
+    return NextResponse.json(
+      { error: "Failed to create person" },
       { status: 500 }
     );
   }
@@ -101,10 +157,24 @@ export async function POST(request: Request) {
 
 function generateRandomColor(): string {
   const colors = [
-    '#e57373', '#f06292', '#ba68c8', '#9575cd', '#7986cb',
-    '#64b5f6', '#4fc3f7', '#4dd0e1', '#4db6ac', '#81c784',
-    '#aed581', '#dce775', '#fff176', '#ffd54f', '#ffb74d',
-    '#ff8a65', '#a1887f', '#90a4ae',
+    "#e57373",
+    "#f06292",
+    "#ba68c8",
+    "#9575cd",
+    "#7986cb",
+    "#64b5f6",
+    "#4fc3f7",
+    "#4dd0e1",
+    "#4db6ac",
+    "#81c784",
+    "#aed581",
+    "#dce775",
+    "#fff176",
+    "#ffd54f",
+    "#ffb74d",
+    "#ff8a65",
+    "#a1887f",
+    "#90a4ae",
   ];
   return colors[Math.floor(Math.random() * colors.length)];
 }

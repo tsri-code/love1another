@@ -21,7 +21,7 @@ export function VerseCard({ verseId, className = '', compact = false, muted = fa
           className="font-serif italic text-[var(--text-muted)]"
           style={{ fontSize: 'var(--text-sm)', lineHeight: 'var(--leading-relaxed)' }}
         >
-          "{verse.text.substring(0, 80)}..."
+          &ldquo;{verse.text.substring(0, 80)}...&rdquo;
         </p>
         <p 
           className="text-[var(--text-muted)]"
@@ -51,7 +51,7 @@ export function VerseCard({ verseId, className = '', compact = false, muted = fa
             lineHeight: 'var(--leading-loose)',
           }}
         >
-          "{verse.text}"
+          &ldquo;{verse.text}&rdquo;
         </p>
       </blockquote>
 

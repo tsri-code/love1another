@@ -39,6 +39,9 @@ export function AvatarCircle({
 
   const Component = onClick && interactive ? 'button' : 'div';
 
+  // Add size class for CSS overrides on mobile
+  const sizeClass = `avatar-${size}`;
+
   return (
     <Component
       onClick={onClick}
@@ -48,6 +51,7 @@ export function AvatarCircle({
         transition-all duration-200 ease-out
         ${interactive && onClick ? 'cursor-pointer hover:scale-105 active:scale-95' : ''}
         focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)] focus-visible:ring-offset-2
+        ${sizeClass}
         ${className}
       `}
       style={{

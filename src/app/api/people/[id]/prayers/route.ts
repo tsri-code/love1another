@@ -1,184 +1,140 @@
-import { NextResponse } from 'next/server';
-import { getPersonById, updatePrayerData } from '@/lib/db';
-import type { PrayerData, Prayer } from '@/lib/db';
-import { decrypt, encrypt, generateId } from '@/lib/crypto';
-import { getSessionForPerson, refreshSession } from '@/lib/session';
+import { NextRequest, NextResponse } from "next/server";
+import { getAuthenticatedUser } from "@/lib/supabase-db";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
+import {
+  checkRateLimit,
+  rateLimits,
+  rateLimitedResponse,
+} from "@/lib/api-security";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 /**
- * GET /api/people/[id]/prayers - Get all prayers (requires session)
+ * GET /api/people/[id]/prayers - Get encrypted prayers data
+ *
+ * Returns the encrypted prayers blob - decryption happens client-side
  */
 export async function GET(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Rate limiting
+    const rateLimit = checkRateLimit(request, rateLimits.prayer);
+    if (rateLimit.limited) {
+      return rateLimitedResponse(rateLimit.resetAt);
+    }
+
+    const user = await getAuthenticatedUser();
+    if (!user) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    }
+
     const { id } = await params;
-    
-    // Check session
-    const session = await getSessionForPerson(id);
-    if (!session) {
-      return NextResponse.json(
-        { error: 'Unauthorized - session required' },
-        { status: 401 }
-      );
+    const supabase = await createServerSupabaseClient();
+
+    const { data: profile, error } = await supabase
+      .from("profiles")
+      .select("id, encrypted_prayers, encryption_iv, prayer_count")
+      .eq("id", id)
+      .single();
+
+    if (error || !profile) {
+      return NextResponse.json({ error: "Profile not found" }, { status: 404 });
     }
 
-    // Refresh session activity
-    await refreshSession();
-
-    const person = await getPersonById(id);
-    if (!person) {
-      return NextResponse.json(
-        { error: 'Person not found' },
-        { status: 404 }
-      );
-    }
-
-    // Get passcode from URL (passed securely via POST to unlock)
-    const url = new URL(request.url);
-    const passcode = url.searchParams.get('p');
-
-    if (!passcode) {
-      return NextResponse.json(
-        { error: 'Decryption key required' },
-        { status: 400 }
-      );
-    }
-
-    if (!person.prayerDataEncrypted) {
-      return NextResponse.json({ prayers: [] });
-    }
-
-    try {
-      const decryptedJson = await decrypt(person.prayerDataEncrypted, passcode);
-      const prayerData: PrayerData = JSON.parse(decryptedJson);
-
-      return NextResponse.json({ prayers: prayerData.prayers });
-    } catch {
-      return NextResponse.json(
-        { error: 'Decryption failed' },
-        { status: 401 }
-      );
-    }
+    // Return encrypted data - client will decrypt
+    return NextResponse.json({
+      encryptedPrayers: profile.encrypted_prayers,
+      encryptionIv: profile.encryption_iv,
+      prayerCount: profile.prayer_count,
+    });
   } catch (error) {
-    console.error('Error fetching prayers:', error);
+    console.error("Error fetching prayers:", error);
     return NextResponse.json(
-      { error: 'Failed to fetch prayers' },
+      { error: "Failed to fetch prayers" },
       { status: 500 }
     );
   }
 }
 
 /**
- * POST /api/people/[id]/prayers - Add a new prayer (requires session)
+ * POST /api/people/[id]/prayers - Save encrypted prayers data
+ *
+ * Receives encrypted prayers blob from client
  */
 export async function POST(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params;
-    
-    // Check session
-    const session = await getSessionForPerson(id);
-    if (!session) {
-      return NextResponse.json(
-        { error: 'Unauthorized - session required' },
-        { status: 401 }
-      );
+    // Rate limiting
+    const rateLimit = checkRateLimit(request, rateLimits.prayer);
+    if (rateLimit.limited) {
+      return rateLimitedResponse(rateLimit.resetAt);
     }
 
-    await refreshSession();
+    const user = await getAuthenticatedUser();
+    if (!user) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    }
 
-    const person = await getPersonById(id);
-    if (!person) {
-      return NextResponse.json(
-        { error: 'Person not found' },
-        { status: 404 }
-      );
+    const { id } = await params;
+    const supabase = await createServerSupabaseClient();
+
+    // Verify profile exists and belongs to user
+    const { data: profile, error: fetchError } = await supabase
+      .from("profiles")
+      .select("id, user_id")
+      .eq("id", id)
+      .single();
+
+    if (fetchError || !profile) {
+      return NextResponse.json({ error: "Profile not found" }, { status: 404 });
     }
 
     const body = await request.json();
-    const { text, passcode, category = 'immediate' } = body;
+    const { encryptedPrayers, encryptionIv, prayerCount, lastPrayedAt } = body;
 
-    if (!text || typeof text !== 'string' || text.trim().length === 0) {
+    if (!encryptedPrayers || !encryptionIv) {
       return NextResponse.json(
-        { error: 'Prayer text is required' },
+        { error: "Encrypted prayers data is required" },
         { status: 400 }
       );
     }
 
-    if (text.length > 5000) {
-      return NextResponse.json(
-        { error: 'Prayer text too long (max 5000 characters)' },
-        { status: 400 }
-      );
-    }
-
-    if (!passcode) {
-      return NextResponse.json(
-        { error: 'Passcode required for encryption' },
-        { status: 400 }
-      );
-    }
-
-    // Validate category
-    if (!['immediate', 'ongoing'].includes(category)) {
-      return NextResponse.json(
-        { error: 'Category must be "immediate" or "ongoing"' },
-        { status: 400 }
-      );
-    }
-
-    // Get current prayers
-    let prayerData: PrayerData = { prayers: [] };
-    if (person.prayerDataEncrypted) {
-      try {
-        const decryptedJson = await decrypt(person.prayerDataEncrypted, passcode);
-        prayerData = JSON.parse(decryptedJson);
-      } catch {
-        return NextResponse.json(
-          { error: 'Decryption failed' },
-          { status: 401 }
-        );
-      }
-    }
-
-    // Create new prayer
-    const now = new Date().toISOString();
-    const newPrayer: Prayer = {
-      id: generateId(),
-      text: text.trim(),
-      createdAt: now,
-      updatedAt: now,
-      pinned: false,
-      answered: false,
-      answeredAt: null,
-      lastPrayedAt: null,
-      tags: [],
-      category,
-      notAnsweredNote: null,
+    // Build update object
+    const updateData: Record<string, unknown> = {
+      encrypted_prayers: encryptedPrayers,
+      encryption_iv: encryptionIv,
+      prayer_count: prayerCount ?? 0,
+      updated_at: new Date().toISOString(),
     };
 
-    prayerData.prayers.unshift(newPrayer);
+    // Only update last_prayed_at if provided
+    if (lastPrayedAt) {
+      updateData.last_prayed_at = lastPrayedAt;
+    }
 
-    // Re-encrypt and save
-    const encryptedData = await encrypt(JSON.stringify(prayerData), passcode);
-    const lastPrayedAt = prayerData.prayers.reduce((latest: string | null, p) => {
-      if (!p.lastPrayedAt) return latest;
-      if (!latest) return p.lastPrayedAt;
-      return new Date(p.lastPrayedAt) > new Date(latest) ? p.lastPrayedAt : latest;
-    }, null);
-    
-    await updatePrayerData(id, encryptedData, prayerData.prayers.length, lastPrayedAt);
+    // Update profile with encrypted prayers
+    const { error: updateError } = await supabase
+      .from("profiles")
+      .update(updateData)
+      .eq("id", id);
 
-    return NextResponse.json({ prayer: newPrayer }, { status: 201 });
+    if (updateError) {
+      console.error("Error updating prayers:", updateError);
+      return NextResponse.json(
+        { error: "Failed to save prayers" },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error creating prayer:', error);
+    console.error("Error saving prayers:", error);
     return NextResponse.json(
-      { error: 'Failed to create prayer' },
+      { error: "Failed to save prayers" },
       { status: 500 }
     );
   }
