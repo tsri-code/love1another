@@ -1,20 +1,18 @@
 # Notification Sounds
 
-Place your notification sound files here:
+This folder contains audio files for notification sounds:
 
-1. **message.mp3** - Played when a new message arrives
-2. **friend-request.mp3** - Played when a friend request is received
+- `messages.aac` - Played when a new message is received
+- `friend-request.aac` - Played when a friend request is received or accepted
 
-## Recommended Specifications:
-- Format: MP3 or WAV
-- Duration: 0.5 - 2 seconds
-- File size: Under 100KB for fast loading
+## Sound Settings
 
-## Free Sound Resources:
-- https://mixkit.co/free-sound-effects/notification/
-- https://freesound.org/
-- https://notificationsounds.com/
+Users can enable/disable notification sounds in Account Settings > Notification Sounds.
 
-Just download your preferred sounds and rename them to:
-- `message.mp3`
-- `friend-request.mp3`
+The browser tab title will show notification counts (e.g., "(3) Love1Another") regardless of sound settings.
+
+## Format
+
+- AAC format for good quality and small file size
+- Keep files small (< 100KB each)
+- Choose pleasant, non-intrusive sounds

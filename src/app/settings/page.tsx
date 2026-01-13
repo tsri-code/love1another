@@ -13,11 +13,18 @@ import {
   CheckCircleIcon,
   AlertCircleIcon,
 } from "@/components/ui/alert";
+import { useNotifications } from "@/lib/use-notifications";
 
 export default function SettingsPage() {
   const router = useRouter();
   const { user } = useAuth();
   const { showToast } = useToast();
+  const {
+    messageSoundEnabled,
+    friendRequestSoundEnabled,
+    setMessageSoundEnabled,
+    setFriendRequestSoundEnabled,
+  } = useNotifications();
 
   // Profile edit state
   const [displayName, setDisplayName] = useState("");
@@ -765,6 +772,181 @@ export default function SettingsPage() {
               >
                 Connect with other users and link their profiles to your prayer
                 list.
+              </p>
+            </div>
+
+            {/* Notification Settings */}
+            <div className="card">
+              <h2
+                className="font-serif font-semibold"
+                style={{
+                  fontSize: "var(--text-lg)",
+                  marginBottom: "var(--space-md)",
+                }}
+              >
+                Notification Sounds
+              </h2>
+
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "var(--space-md)",
+                }}
+              >
+                {/* Message Sound Toggle */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "var(--space-sm) 0",
+                  }}
+                >
+                  <div>
+                    <p style={{ fontWeight: 500 }}>New Message Sound</p>
+                    <p
+                      className="text-[var(--text-muted)]"
+                      style={{ fontSize: "var(--text-sm)" }}
+                    >
+                      Play a sound when you receive a new message
+                    </p>
+                  </div>
+                  <label
+                    style={{
+                      position: "relative",
+                      display: "inline-block",
+                      width: "48px",
+                      height: "24px",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={messageSoundEnabled}
+                      onChange={(e) => setMessageSoundEnabled(e.target.checked)}
+                      style={{
+                        opacity: 0,
+                        width: 0,
+                        height: 0,
+                      }}
+                    />
+                    <span
+                      style={{
+                        position: "absolute",
+                        cursor: "pointer",
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        backgroundColor: messageSoundEnabled
+                          ? "var(--primary)"
+                          : "var(--bg-secondary)",
+                        transition: "0.3s",
+                        borderRadius: "24px",
+                        border: "1px solid var(--border-light)",
+                      }}
+                    >
+                      <span
+                        style={{
+                          position: "absolute",
+                          content: '""',
+                          height: "18px",
+                          width: "18px",
+                          left: messageSoundEnabled ? "26px" : "3px",
+                          bottom: "2px",
+                          backgroundColor: "white",
+                          transition: "0.3s",
+                          borderRadius: "50%",
+                          boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+                        }}
+                      />
+                    </span>
+                  </label>
+                </div>
+
+                {/* Friend Request Sound Toggle */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "var(--space-sm) 0",
+                  }}
+                >
+                  <div>
+                    <p style={{ fontWeight: 500 }}>Friend Request Sound</p>
+                    <p
+                      className="text-[var(--text-muted)]"
+                      style={{ fontSize: "var(--text-sm)" }}
+                    >
+                      Play a sound for friend request notifications
+                    </p>
+                  </div>
+                  <label
+                    style={{
+                      position: "relative",
+                      display: "inline-block",
+                      width: "48px",
+                      height: "24px",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={friendRequestSoundEnabled}
+                      onChange={(e) =>
+                        setFriendRequestSoundEnabled(e.target.checked)
+                      }
+                      style={{
+                        opacity: 0,
+                        width: 0,
+                        height: 0,
+                      }}
+                    />
+                    <span
+                      style={{
+                        position: "absolute",
+                        cursor: "pointer",
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        backgroundColor: friendRequestSoundEnabled
+                          ? "var(--primary)"
+                          : "var(--bg-secondary)",
+                        transition: "0.3s",
+                        borderRadius: "24px",
+                        border: "1px solid var(--border-light)",
+                      }}
+                    >
+                      <span
+                        style={{
+                          position: "absolute",
+                          content: '""',
+                          height: "18px",
+                          width: "18px",
+                          left: friendRequestSoundEnabled ? "26px" : "3px",
+                          bottom: "2px",
+                          backgroundColor: "white",
+                          transition: "0.3s",
+                          borderRadius: "50%",
+                          boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+                        }}
+                      />
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              <p
+                className="text-[var(--text-muted)]"
+                style={{
+                  fontSize: "var(--text-sm)",
+                  marginTop: "var(--space-md)",
+                }}
+              >
+                Note: Browser notifications require your permission. Notification
+                counts will still appear in the tab title even if sounds are
+                disabled.
               </p>
             </div>
 
