@@ -7,10 +7,11 @@ import { CryptoProvider } from "@/lib/use-crypto";
 import { AlertBannerProvider } from "@/components/ui/alert-banner";
 
 export const metadata: Metadata = {
-  title: "Love1Another - Christian Prayer List App",
+  title: "Love One Another | Christian Prayer App",
   description:
-    "A private, personal Christian prayer list app for keeping track of prayers for your loved ones. Manage prayer requests, track answered prayers, and stay connected with your faith community.",
+    "A private, personal prayer request app for keeping track of prayers for your loved ones. Manage prayer requests, track answered prayers, and stay connected.",
   keywords: [
+    "prayer app",
     "prayer list",
     "Christian prayer app",
     "prayer request app",
@@ -24,26 +25,28 @@ export const metadata: Metadata = {
   ],
   manifest: "/manifest.json",
   icons: {
-    icon: [{ url: "/favicon.jpeg", type: "image/jpeg" }],
-    apple: [{ url: "/favicon.jpeg", type: "image/jpeg" }],
+    icon: [
+      { url: "/favicon-32.png", type: "image/png", sizes: "32x32" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", type: "image/png", sizes: "180x180" }],
   },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Love1Another",
+    title: "Love One Another",
   },
   openGraph: {
-    title: "Love1Another - Christian Prayer List App",
+    title: "Love One Another | Christian Prayer App",
     description:
-      "A private, personal Christian prayer list app for keeping track of prayers for your loved ones.",
+      "A private, personal prayer request app for keeping track of prayers for your loved ones.",
     type: "website",
-    siteName: "Love1Another",
+    siteName: "Love One Another",
   },
   twitter: {
     card: "summary",
-    title: "Love1Another - Christian Prayer List App",
+    title: "Love One Another | Christian Prayer App",
     description:
-      "A private, personal Christian prayer list app for keeping track of prayers for your loved ones.",
+      "A private, personal prayer request app for keeping track of prayers for your loved ones.",
   },
 };
 

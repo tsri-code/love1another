@@ -478,7 +478,7 @@ END;
 $$;
 
 -- Function to get user info by ID
-CREATE OR REPLACE FUNCTION get_user_by_id(lookup_user_id UUID)
+CREATE OR REPLACE FUNCTION get_user_by_id(user_id UUID)
 RETURNS TABLE (
   id UUID,
   email TEXT,
@@ -502,7 +502,7 @@ BEGIN
     (u.raw_user_meta_data->>'avatar_color')::TEXT as avatar_color,
     (u.raw_user_meta_data->>'avatar_path')::TEXT as avatar_path
   FROM auth.users u
-  WHERE u.id = lookup_user_id
+  WHERE u.id = get_user_by_id.user_id
   LIMIT 1;
 END;
 $$;
