@@ -807,20 +807,26 @@ export async function getConversations(
 ): Promise<Conversation[]> {
   const supabase = await createServerSupabaseClient();
 
-  // Only fetch private (direct) conversations - group chats handled separately
-  const { data, error } = await supabase
+  // Fetch conversations where user is a participant
+  // Filter for private/null type to exclude group chats (handled separately)
+  const result = await supabase
     .from("conversations")
     .select("*")
     .or(`user1_id.eq.${userId},user2_id.eq.${userId}`)
-    .eq("type", "private")
     .order("updated_at", { ascending: false });
 
-  if (error) {
-    console.error("Error fetching conversations:", error);
-    throw error;
+  if (result.error) {
+    console.error("Error fetching conversations:", result.error);
+    throw result.error;
   }
 
-  return data || [];
+  // Filter out group chats client-side (type !== 'group')
+  // This handles both when type column exists and when it doesn't
+  const data = (result.data || []).filter(
+    (c: Record<string, unknown>) => !c.type || c.type === "private"
+  );
+
+  return data;
 }
 
 /**
@@ -871,25 +877,36 @@ export async function getOrCreateConversation(
     return existing;
   }
 
-  // Create new private conversation
-  const { data, error } = await supabase
+  // Create new private conversation - try with type first, fallback without
+  const insertData: Record<string, unknown> = {
+    user1_id,
+    user2_id,
+    user1_key_encrypted: user1KeyEncrypted,
+    user2_key_encrypted: user2KeyEncrypted,
+  };
+
+  // Try with type column first
+  let result = await supabase
     .from("conversations")
-    .insert({
-      user1_id,
-      user2_id,
-      user1_key_encrypted: user1KeyEncrypted,
-      user2_key_encrypted: user2KeyEncrypted,
-      type: "private", // Explicitly set type for private DMs
-    })
+    .insert({ ...insertData, type: "private" })
     .select()
     .single();
 
-  if (error) {
-    console.error("Error creating conversation:", error);
-    throw error;
+  // If error mentions 'type' column, retry without it
+  if (result.error && result.error.message?.includes("type")) {
+    result = await supabase
+      .from("conversations")
+      .insert(insertData)
+      .select()
+      .single();
   }
 
-  return data;
+  if (result.error) {
+    console.error("Error creating conversation:", result.error);
+    throw result.error;
+  }
+
+  return result.data;
 }
 
 // ============================================================================
