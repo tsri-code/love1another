@@ -32,7 +32,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       conversations: conversations.map((c) => ({
         id: c.id,
-        otherUserId: c.user1_id === user.id ? c.user2_id : c.user1_id,
+        type: c.type || "private",
+        // For private chats, provide the other user's ID
+        otherUserId: c.type === "group" ? null : (c.user1_id === user.id ? c.user2_id : c.user1_id),
+        // For group chats, provide group info
+        groupName: c.group_name || null,
+        creatorId: c.creator_id || null,
         createdAt: c.created_at,
         updatedAt: c.updated_at,
       })),

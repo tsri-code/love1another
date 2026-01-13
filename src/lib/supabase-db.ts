@@ -800,36 +800,28 @@ export async function getProfileByConnectedUser(
 }
 
 // ============================================================================
-// Conversation Operations
+// Conversation Operations (Using SECURITY DEFINER RPC Functions)
 // ============================================================================
 
 /**
- * Get all conversations for a user
+ * Get all conversations for a user (private + groups)
+ * Uses RPC function that bypasses RLS
  */
 export async function getConversations(
   userId: string
 ): Promise<Conversation[]> {
   const supabase = await createServerSupabaseClient();
 
-  // Fetch conversations where user is a participant
-  const result = await supabase
-    .from("conversations")
-    .select("*")
-    .or(`user1_id.eq.${userId},user2_id.eq.${userId}`)
-    .order("updated_at", { ascending: false });
+  const { data, error } = await supabase.rpc("get_user_conversations", {
+    p_user_id: userId,
+  });
 
-  if (result.error) {
-    console.error("Error fetching conversations:", result.error);
-    throw result.error;
+  if (error) {
+    console.error("Error fetching conversations:", error);
+    throw error;
   }
 
-  // Filter out group chats client-side (type !== 'group')
-  // This handles both when type column exists and when it doesn't
-  const data = (result.data || []).filter(
-    (c: Record<string, unknown>) => !c.type || c.type === "private"
-  );
-
-  return data;
+  return (data || []) as Conversation[];
 }
 
 /**
@@ -857,6 +849,7 @@ export async function getConversationById(
 
 /**
  * Check if a user has access to a conversation (private or group)
+ * Uses RPC function that bypasses RLS
  */
 export async function userHasConversationAccess(
   userId: string,
@@ -864,110 +857,67 @@ export async function userHasConversationAccess(
 ): Promise<boolean> {
   const supabase = await createServerSupabaseClient();
 
-  // Get the conversation first
-  const { data: conversation, error: convError } = await supabase
-    .from("conversations")
-    .select("*")
-    .eq("id", conversationId)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc("user_has_conversation_access", {
+    p_user_id: userId,
+    p_conversation_id: conversationId,
+  });
 
-  if (convError || !conversation) {
-    console.error("Error fetching conversation for access check:", convError);
+  if (error) {
+    console.error("Error checking conversation access:", error);
     return false;
   }
 
-  // Check private conversation (user1_id or user2_id)
-  if (conversation.user1_id === userId || conversation.user2_id === userId) {
-    return true;
-  }
-
-  // Check group creator
-  if (conversation.creator_id === userId) {
-    return true;
-  }
-
-  // Check group membership (only for group type)
-  if (conversation.type === "group") {
-    const { data: member, error: memberError } = await supabase
-      .from("conversation_members")
-      .select("id")
-      .eq("conversation_id", conversationId)
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (memberError) {
-      console.error("Error checking group membership:", memberError);
-      return false;
-    }
-
-    return !!member;
-  }
-
-  return false;
+  return !!data;
 }
 
 /**
  * Get or create a conversation between two users
+ * Uses RPC function that bypasses RLS
  */
 export async function getOrCreateConversation(
   userId1: string,
   userId2: string,
-  user1KeyEncrypted: string,
-  user2KeyEncrypted: string
+  _user1KeyEncrypted: string,
+  _user2KeyEncrypted: string
 ): Promise<Conversation> {
   const supabase = await createServerSupabaseClient();
 
-  const [user1_id, user2_id] = [userId1, userId2].sort();
+  // Use RPC function to get or create conversation
+  const { data: conversationId, error } = await supabase.rpc(
+    "get_or_create_private_conversation",
+    {
+      p_user1_id: userId1,
+      p_user2_id: userId2,
+    }
+  );
 
-  // Try to find existing conversation - use maybeSingle() to avoid error when not found
-  const existingResult = await supabase
+  if (error) {
+    console.error("Error in getOrCreateConversation:", error);
+    throw error;
+  }
+
+  // Fetch the full conversation data
+  const { data: conversation, error: fetchError } = await supabase
     .from("conversations")
     .select("*")
-    .eq("user1_id", user1_id)
-    .eq("user2_id", user2_id)
-    .maybeSingle();
-
-  if (existingResult.error) {
-    console.error(
-      "Error checking existing conversation:",
-      existingResult.error
-    );
-    throw existingResult.error;
-  }
-
-  if (existingResult.data) {
-    return existingResult.data;
-  }
-
-  // Create new private conversation with type explicitly set
-  const insertData = {
-    user1_id,
-    user2_id,
-    user1_key_encrypted: user1KeyEncrypted,
-    user2_key_encrypted: user2KeyEncrypted,
-    type: "private",
-  };
-
-  const result = await supabase
-    .from("conversations")
-    .insert(insertData)
-    .select()
+    .eq("id", conversationId)
     .single();
 
-  if (result.error) {
-    console.error("Error creating conversation:", result.error);
-    throw result.error;
+  if (fetchError) {
+    console.error("Error fetching conversation:", fetchError);
+    throw fetchError;
   }
 
-  return result.data;
+  return conversation;
 }
 
 // ============================================================================
-// Message Operations
+// Message Operations (Using SECURITY DEFINER RPC Functions)
 // ============================================================================
 
 /**
  * Get messages for a conversation
+ * Uses RPC function that bypasses RLS and checks access internally
  */
 export async function getMessages(
   conversationId: string,
@@ -976,23 +926,23 @@ export async function getMessages(
 ): Promise<Message[]> {
   const supabase = await createServerSupabaseClient();
 
-  const { data, error } = await supabase
-    .from("messages")
-    .select("*")
-    .eq("conversation_id", conversationId)
-    .order("created_at", { ascending: !newestFirst })
-    .limit(limit);
+  const { data, error } = await supabase.rpc("get_conversation_messages", {
+    p_conversation_id: conversationId,
+    p_limit: limit,
+    p_newest_first: newestFirst,
+  });
 
   if (error) {
     console.error("Error fetching messages:", error);
     throw error;
   }
 
-  return data || [];
+  return (data || []) as Message[];
 }
 
 /**
  * Send a message
+ * Uses RPC function that bypasses RLS and checks access internally
  */
 export async function sendMessage(data: {
   conversation_id: string;
@@ -1003,41 +953,44 @@ export async function sendMessage(data: {
 }): Promise<Message> {
   const supabase = await createServerSupabaseClient();
 
-  const { data: message, error } = await supabase
-    .from("messages")
-    .insert(data)
-    .select()
-    .single();
+  const { data: messageId, error } = await supabase.rpc("send_message", {
+    p_conversation_id: data.conversation_id,
+    p_encrypted_content: data.encrypted_content,
+    p_iv: data.iv,
+    p_message_type: data.message_type,
+  });
 
   if (error) {
     console.error("Error sending message:", error);
     throw error;
   }
 
-  // Update conversation's updated_at
-  await supabase
-    .from("conversations")
-    .update({ updated_at: new Date().toISOString() })
-    .eq("id", data.conversation_id);
-
-  return message;
+  // Return a message object with the ID
+  return {
+    id: messageId,
+    conversation_id: data.conversation_id,
+    sender_id: data.sender_id,
+    encrypted_content: data.encrypted_content,
+    iv: data.iv,
+    message_type: data.message_type,
+    is_read: false,
+    created_at: new Date().toISOString(),
+  };
 }
 
 /**
  * Mark messages as read
+ * Uses RPC function that bypasses RLS
  */
 export async function markMessagesAsRead(
   conversationId: string,
-  userId: string
+  _userId: string
 ): Promise<void> {
   const supabase = await createServerSupabaseClient();
 
-  const { error } = await supabase
-    .from("messages")
-    .update({ is_read: true })
-    .eq("conversation_id", conversationId)
-    .neq("sender_id", userId)
-    .eq("is_read", false);
+  const { error } = await supabase.rpc("mark_messages_read", {
+    p_conversation_id: conversationId,
+  });
 
   if (error) {
     console.error("Error marking messages as read:", error);
@@ -1047,32 +1000,24 @@ export async function markMessagesAsRead(
 
 /**
  * Delete a conversation and all its messages
+ * Uses RPC function that bypasses RLS and checks access internally
  */
 export async function deleteConversation(
   conversationId: string
 ): Promise<void> {
   const supabase = await createServerSupabaseClient();
 
-  // Delete all messages in the conversation first
-  const { error: messagesError } = await supabase
-    .from("messages")
-    .delete()
-    .eq("conversation_id", conversationId);
+  const { data: success, error } = await supabase.rpc("delete_conversation", {
+    p_conversation_id: conversationId,
+  });
 
-  if (messagesError) {
-    console.error("Error deleting messages:", messagesError);
-    throw messagesError;
+  if (error) {
+    console.error("Error deleting conversation:", error);
+    throw error;
   }
 
-  // Then delete the conversation
-  const { error: conversationError } = await supabase
-    .from("conversations")
-    .delete()
-    .eq("id", conversationId);
-
-  if (conversationError) {
-    console.error("Error deleting conversation:", conversationError);
-    throw conversationError;
+  if (!success) {
+    throw new Error("Failed to delete conversation - access denied");
   }
 }
 

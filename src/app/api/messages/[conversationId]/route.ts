@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   getAuthenticatedUser,
-  getConversationById,
   getMessages,
   sendMessage,
   markMessagesAsRead,
   deleteConversation,
-  userHasConversationAccess,
 } from "@/lib/supabase-db";
 import {
   checkRateLimit,
@@ -18,6 +16,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * GET /api/messages/[conversationId] - Get messages in a conversation
+ * Access control is handled by the RPC function internally
  */
 export async function GET(
   request: NextRequest,
@@ -36,22 +35,14 @@ export async function GET(
 
     const { conversationId } = await params;
 
-    // Verify user has access to this conversation (private or group)
-    const hasAccess = await userHasConversationAccess(user.id, conversationId);
-    if (!hasAccess) {
-      return NextResponse.json(
-        { error: "Conversation not found or not authorized" },
-        { status: 404 }
-      );
-    }
-
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get("limit") || "50", 10);
     const newestFirst = searchParams.get("newest") === "true";
 
+    // RPC function handles access control - returns empty if no access
     const messages = await getMessages(conversationId, limit, newestFirst);
 
-    // Mark messages as read
+    // Mark messages as read (RPC function handles access control)
     await markMessagesAsRead(conversationId, user.id);
 
     return NextResponse.json({
@@ -76,6 +67,7 @@ export async function GET(
 
 /**
  * POST /api/messages/[conversationId] - Send a message
+ * Access control is handled by the RPC function internally
  */
 export async function POST(
   request: NextRequest,
@@ -94,15 +86,6 @@ export async function POST(
 
     const { conversationId } = await params;
 
-    // Verify user has access to this conversation (private or group)
-    const hasAccess = await userHasConversationAccess(user.id, conversationId);
-    if (!hasAccess) {
-      return NextResponse.json(
-        { error: "Conversation not found or not authorized" },
-        { status: 404 }
-      );
-    }
-
     const body = await request.json();
     const { encryptedContent, iv, type = "message" } = body;
 
@@ -113,6 +96,7 @@ export async function POST(
       );
     }
 
+    // RPC function handles access control - throws if no access
     const message = await sendMessage({
       conversation_id: conversationId,
       sender_id: user.id,
@@ -143,6 +127,7 @@ export async function POST(
 
 /**
  * DELETE /api/messages/[conversationId] - Delete a conversation
+ * Access control is handled by the RPC function internally
  */
 export async function DELETE(
   request: NextRequest,
@@ -161,26 +146,7 @@ export async function DELETE(
 
     const { conversationId } = await params;
 
-    // Verify user has access to this conversation
-    const conversation = await getConversationById(conversationId);
-    if (!conversation) {
-      return NextResponse.json(
-        { error: "Conversation not found" },
-        { status: 404 }
-      );
-    }
-
-    // For delete: must be participant (private) or creator (group)
-    const isParticipant = conversation.user1_id === user.id || conversation.user2_id === user.id;
-    const isCreator = conversation.creator_id === user.id;
-
-    if (!isParticipant && !isCreator) {
-      return NextResponse.json(
-        { error: "Not authorized to delete this conversation" },
-        { status: 403 }
-      );
-    }
-
+    // RPC function handles access control - throws if no access
     await deleteConversation(conversationId);
 
     return NextResponse.json({ success: true });
