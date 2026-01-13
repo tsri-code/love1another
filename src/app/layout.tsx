@@ -5,11 +5,12 @@ import { ToastProvider } from "@/lib/toast";
 import { AuthGuard } from "@/components/AuthGuard";
 import { CryptoProvider } from "@/lib/use-crypto";
 import { AlertBannerProvider } from "@/components/ui/alert-banner";
+import { Analytics } from "@vercel/analytics/react";
 
 export const metadata: Metadata = {
-  title: "Love One Another | Christian Prayer App",
+  title: "Love1Another - Christian Prayer List and Connection App",
   description:
-    "A private, personal prayer request app for keeping track of prayers for your loved ones. Manage prayer requests, track answered prayers, and stay connected.",
+    "Love1Another - Christian Prayer List and Connection App. A private, personal prayer request app for keeping track of prayers for your loved ones. Manage prayer requests, track answered prayers, and stay connected.",
   keywords: [
     "prayer app",
     "prayer list",
@@ -21,30 +22,37 @@ export const metadata: Metadata = {
     "Christian app",
     "prayer journal",
     "prayer requests",
+    "christian social network",
+    "christian social app",
+    "christian social network app",
+    "christian social network app",
     "answered prayers",
   ],
   manifest: "/manifest.json",
   icons: {
     icon: [
+      { url: "/favicon.ico", sizes: "any" },
       { url: "/favicon-32.png", type: "image/png", sizes: "32x32" },
     ],
-    apple: [{ url: "/apple-touch-icon.png", type: "image/png", sizes: "180x180" }],
+    apple: [
+      { url: "/apple-touch-icon.png", type: "image/png", sizes: "180x180" },
+    ],
   },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Love One Another",
+    title: "Love1Another",
   },
   openGraph: {
-    title: "Love One Another | Christian Prayer App",
+    title: "Love1Another - Christian Prayer List and Connection App",
     description:
       "A private, personal prayer request app for keeping track of prayers for your loved ones.",
     type: "website",
-    siteName: "Love One Another",
+    siteName: "Love1Another",
   },
   twitter: {
     card: "summary",
-    title: "Love One Another | Christian Prayer App",
+    title: "Love1Another - Christian Prayer List and Connection App",
     description:
       "A private, personal prayer request app for keeping track of prayers for your loved ones.",
   },
@@ -78,6 +86,7 @@ export default function RootLayout({
             </AlertBannerProvider>
           </ToastProvider>
         </ThemeProvider>
+        <Analytics />
       </body>
     </html>
   );
