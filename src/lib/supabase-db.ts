@@ -804,8 +804,9 @@ export async function getProfileByConnectedUser(
 // ============================================================================
 
 /**
- * Get all conversations for a user (private + groups)
+ * Get private (direct) conversations for a user
  * Uses RPC function that bypasses RLS
+ * Note: Group conversations are fetched separately via get_user_group_conversations
  */
 export async function getConversations(
   userId: string
@@ -821,7 +822,14 @@ export async function getConversations(
     throw error;
   }
 
-  return (data || []) as Conversation[];
+  // Filter to only return private (direct) conversations
+  // Groups are fetched separately via /api/conversations/groups
+  // Only include conversations that are explicitly private OR have both user IDs set (legacy private chats)
+  const allConversations = (data || []) as Conversation[];
+  return allConversations.filter(
+    (c) =>
+      c.type === "private" || (c.user1_id && c.user2_id && c.type !== "group")
+  );
 }
 
 /**
@@ -1018,6 +1026,58 @@ export async function deleteConversation(
 
   if (!success) {
     throw new Error("Failed to delete conversation - access denied");
+  }
+}
+
+/**
+ * Add a member to a group conversation (creator only)
+ * Uses RPC function that bypasses RLS and checks access internally
+ */
+export async function addGroupMember(
+  conversationId: string,
+  userId: string
+): Promise<void> {
+  const supabase = await createServerSupabaseClient();
+
+  const { data: success, error } = await supabase.rpc("add_group_member", {
+    p_conversation_id: conversationId,
+    p_new_member_id: userId,
+  });
+
+  if (error) {
+    console.error("Error adding group member:", error);
+    throw error;
+  }
+
+  if (!success) {
+    throw new Error(
+      "Failed to add group member - access denied or not a group"
+    );
+  }
+}
+
+/**
+ * Remove/kick a member from a group conversation (creator only)
+ * Uses RPC function that bypasses RLS and checks access internally
+ */
+export async function removeGroupMember(
+  conversationId: string,
+  userId: string
+): Promise<void> {
+  const supabase = await createServerSupabaseClient();
+
+  const { data: success, error } = await supabase.rpc("remove_group_member", {
+    p_conversation_id: conversationId,
+    p_member_id: userId,
+  });
+
+  if (error) {
+    console.error("Error removing group member:", error);
+    throw error;
+  }
+
+  if (!success) {
+    throw new Error("Failed to remove group member - access denied");
   }
 }
 

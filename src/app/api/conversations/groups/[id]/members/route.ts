@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { addGroupMember, removeGroupMember } from "@/lib/supabase-db";
 import { z } from "zod";
 
 // Schema for adding members
@@ -86,7 +87,7 @@ export async function GET(
   }
 }
 
-// POST /api/conversations/groups/[id]/members - Add member to group
+// POST /api/conversations/groups/[id]/members - Add member to group (creator only)
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -116,56 +117,8 @@ export async function POST(
 
     const { userId } = validation.data;
 
-    // Check if current user is admin of this group
-    const { data: adminCheck } = await supabase
-      .from("conversation_members")
-      .select("role")
-      .eq("conversation_id", conversationId)
-      .eq("user_id", user.id)
-      .single();
-
-    if (!adminCheck || adminCheck.role !== "admin") {
-      return NextResponse.json(
-        { error: "Only admins can add members" },
-        { status: 403 }
-      );
-    }
-
-    // Check if user is already a member
-    const { data: existingMember } = await supabase
-      .from("conversation_members")
-      .select("id")
-      .eq("conversation_id", conversationId)
-      .eq("user_id", userId)
-      .single();
-
-    if (existingMember) {
-      return NextResponse.json(
-        { error: "User is already a member" },
-        { status: 400 }
-      );
-    }
-
-    // Add the member
-    const { error } = await supabase.from("conversation_members").insert({
-      conversation_id: conversationId,
-      user_id: userId,
-      role: "member",
-    });
-
-    if (error) {
-      console.error("Error adding member:", error);
-      return NextResponse.json(
-        { error: "Failed to add member" },
-        { status: 500 }
-      );
-    }
-
-    // Update conversation updated_at
-    await supabase
-      .from("conversations")
-      .update({ updated_at: new Date().toISOString() })
-      .eq("id", conversationId);
+    // Use RPC function - it handles creator check internally
+    await addGroupMember(conversationId, userId);
 
     return NextResponse.json({
       success: true,
@@ -173,14 +126,15 @@ export async function POST(
     });
   } catch (error) {
     console.error("Error in POST /api/conversations/groups/[id]/members:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    const message = error instanceof Error ? error.message : "Internal server error";
+    const status = message.includes("access denied") ? 403 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }
 
 // DELETE /api/conversations/groups/[id]/members - Remove member or leave group
+// If no userId query param: user leaves the group (uses delete_conversation RPC)
+// If userId query param: creator kicks that member (uses remove_group_member RPC)
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -202,93 +156,56 @@ export async function DELETE(
     const targetUserId = url.searchParams.get("userId");
 
     // If no userId specified, user is leaving the group
-    const userIdToRemove = targetUserId || user.id;
-    const isSelfLeaving = userIdToRemove === user.id;
+    const isSelfLeaving = !targetUserId || targetUserId === user.id;
 
-    // Get current user's membership
-    const { data: currentMembership } = await supabase
-      .from("conversation_members")
-      .select("role")
-      .eq("conversation_id", conversationId)
-      .eq("user_id", user.id)
-      .single();
+    if (isSelfLeaving) {
+      // User is leaving - use delete_conversation RPC
+      // The RPC handles: creator deletes whole group, member just leaves
+      const { data: success, error } = await supabase.rpc("delete_conversation", {
+        p_conversation_id: conversationId,
+      });
 
-    if (!currentMembership) {
-      return NextResponse.json(
-        { error: "Not a member of this group" },
-        { status: 403 }
-      );
-    }
-
-    // If removing someone else, must be admin
-    if (!isSelfLeaving && currentMembership.role !== "admin") {
-      return NextResponse.json(
-        { error: "Only admins can remove members" },
-        { status: 403 }
-      );
-    }
-
-    // Get the conversation to check if this is the creator
-    const { data: conversation } = await supabase
-      .from("conversations")
-      .select("creator_id")
-      .eq("id", conversationId)
-      .single();
-
-    // If the creator is leaving, delete the entire group
-    if (isSelfLeaving && conversation?.creator_id === user.id) {
-      // Delete the conversation (cascade will remove members and messages)
-      const { error: deleteError } = await supabase
-        .from("conversations")
-        .delete()
-        .eq("id", conversationId);
-
-      if (deleteError) {
-        console.error("Error deleting group:", deleteError);
+      if (error) {
+        console.error("Error leaving group:", error);
         return NextResponse.json(
-          { error: "Failed to delete group" },
+          { error: "Failed to leave group" },
           { status: 500 }
         );
       }
 
+      if (!success) {
+        return NextResponse.json(
+          { error: "Not a member of this group" },
+          { status: 403 }
+        );
+      }
+
+      // Check if user was the creator (group was deleted) or just left
+      const { data: stillExists } = await supabase
+        .from("conversations")
+        .select("id")
+        .eq("id", conversationId)
+        .single();
+
       return NextResponse.json({
         success: true,
-        message: "Group deleted (creator left)",
-        groupDeleted: true,
+        message: stillExists ? "Left group successfully" : "Group deleted (creator left)",
+        groupDeleted: !stillExists,
+      });
+    } else {
+      // Creator is kicking a member - use remove_group_member RPC
+      await removeGroupMember(conversationId, targetUserId);
+
+      return NextResponse.json({
+        success: true,
+        message: "Member removed successfully",
+        groupDeleted: false,
       });
     }
-
-    // Remove the member
-    const { error } = await supabase
-      .from("conversation_members")
-      .delete()
-      .eq("conversation_id", conversationId)
-      .eq("user_id", userIdToRemove);
-
-    if (error) {
-      console.error("Error removing member:", error);
-      return NextResponse.json(
-        { error: "Failed to remove member" },
-        { status: 500 }
-      );
-    }
-
-    // Update conversation updated_at
-    await supabase
-      .from("conversations")
-      .update({ updated_at: new Date().toISOString() })
-      .eq("id", conversationId);
-
-    return NextResponse.json({
-      success: true,
-      message: isSelfLeaving ? "Left group successfully" : "Member removed successfully",
-      groupDeleted: false,
-    });
   } catch (error) {
     console.error("Error in DELETE /api/conversations/groups/[id]/members:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    const message = error instanceof Error ? error.message : "Internal server error";
+    const status = message.includes("access denied") ? 403 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }

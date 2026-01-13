@@ -1,8 +1,11 @@
 -- =============================================================================
--- FINAL MESSAGING FIX - SECURITY DEFINER ARCHITECTURE
+-- FINAL MESSAGING FIX - SECURITY DEFINER + SOFT DELETE + RLS
 -- =============================================================================
--- This script completely rebuilds the messaging security model using
--- SECURITY DEFINER functions that bypass RLS entirely.
+-- This script:
+-- 1. Fixes existing data before adding constraints
+-- 2. Creates conversation_deletions table for per-user soft delete
+-- 3. Uses SECURITY DEFINER functions for access control
+-- 4. Re-enables RLS with deny-all policies (functions bypass RLS)
 --
 -- RUN THIS ENTIRE SCRIPT IN SUPABASE SQL EDITOR
 -- =============================================================================
@@ -81,18 +84,79 @@ BEGIN
 EXCEPTION WHEN others THEN NULL;
 END $$;
 
--- Set default type for existing conversations
+-- IMPORTANT: Fix existing data BEFORE adding constraint
+-- Step 1: Drop the constraint if it exists
+ALTER TABLE public.conversations DROP CONSTRAINT IF EXISTS conversations_type_check;
+
+-- Step 2: Fix all existing data to have valid types
+-- Private chats: have user1_id and user2_id
+UPDATE public.conversations
+SET type = 'private'
+WHERE user1_id IS NOT NULL AND user2_id IS NOT NULL
+  AND (type IS NULL OR type NOT IN ('private', 'group'));
+
+-- Group chats: have creator_id but no user1_id/user2_id
+UPDATE public.conversations
+SET type = 'group'
+WHERE creator_id IS NOT NULL AND user1_id IS NULL
+  AND (type IS NULL OR type NOT IN ('private', 'group'));
+
+-- Fallback: any remaining NULL types default to private
 UPDATE public.conversations SET type = 'private' WHERE type IS NULL;
 
--- =============================================================================
--- STEP 3: DISABLE RLS ON MESSAGING TABLES
--- =============================================================================
--- Since all access goes through SECURITY DEFINER functions, we don't need RLS
--- The functions handle all access control internally
+-- Step 3: NOW add the constraint (all data should be valid)
+ALTER TABLE public.conversations ADD CONSTRAINT conversations_type_check
+  CHECK (type IN ('private', 'group'));
 
-ALTER TABLE public.conversations DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.messages DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.conversation_members DISABLE ROW LEVEL SECURITY;
+-- =============================================================================
+-- STEP 3: CREATE CONVERSATION_DELETIONS TABLE FOR SOFT DELETE
+-- =============================================================================
+-- This table tracks which users have "deleted" a conversation
+-- The conversation and messages remain for other participants
+
+CREATE TABLE IF NOT EXISTS public.conversation_deletions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  conversation_id UUID NOT NULL REFERENCES public.conversations(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  deleted_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(conversation_id, user_id)
+);
+
+-- Create index for fast lookups
+CREATE INDEX IF NOT EXISTS idx_conversation_deletions_user
+  ON public.conversation_deletions(user_id, conversation_id);
+
+-- =============================================================================
+-- STEP 4: ENABLE RLS WITH DENY-ALL POLICIES
+-- =============================================================================
+-- RLS is enabled but denies all direct access
+-- SECURITY DEFINER functions bypass RLS, so they still work
+-- This protects data from direct queries via anon/authenticated keys
+
+ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.conversation_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.conversation_deletions ENABLE ROW LEVEL SECURITY;
+
+-- Drop any existing deny policies first
+DROP POLICY IF EXISTS "deny_all_direct_access" ON public.conversations;
+DROP POLICY IF EXISTS "deny_all_direct_access" ON public.messages;
+DROP POLICY IF EXISTS "deny_all_direct_access" ON public.conversation_members;
+DROP POLICY IF EXISTS "deny_all_direct_access" ON public.conversation_deletions;
+
+-- Create deny-all policies - blocks all direct queries
+-- SECURITY DEFINER functions bypass these policies
+CREATE POLICY "deny_all_direct_access" ON public.conversations
+  FOR ALL USING (false);
+
+CREATE POLICY "deny_all_direct_access" ON public.messages
+  FOR ALL USING (false);
+
+CREATE POLICY "deny_all_direct_access" ON public.conversation_members
+  FOR ALL USING (false);
+
+CREATE POLICY "deny_all_direct_access" ON public.conversation_deletions
+  FOR ALL USING (false);
 
 -- =============================================================================
 -- STEP 4: DROP ALL EXISTING MESSAGING FUNCTIONS
@@ -116,6 +180,7 @@ DROP FUNCTION IF EXISTS public.delete_conversation(UUID);
 
 -- -----------------------------------------------------------------------------
 -- Function: Check if user has access to a conversation
+-- Also checks if user has "deleted" (soft-deleted) the conversation
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.user_has_conversation_access(
   p_user_id UUID,
@@ -130,30 +195,38 @@ DECLARE
   v_conv RECORD;
 BEGIN
   SELECT * INTO v_conv FROM conversations WHERE id = p_conversation_id;
-  
+
   IF NOT FOUND THEN
     RETURN FALSE;
   END IF;
-  
+
+  -- Check if user has soft-deleted this conversation
+  IF EXISTS (
+    SELECT 1 FROM conversation_deletions
+    WHERE conversation_id = p_conversation_id AND user_id = p_user_id
+  ) THEN
+    RETURN FALSE;
+  END IF;
+
   -- Private conversation: check user1_id or user2_id
   IF v_conv.user1_id = p_user_id OR v_conv.user2_id = p_user_id THEN
     RETURN TRUE;
   END IF;
-  
+
   -- Group conversation: check creator or membership
   IF v_conv.type = 'group' THEN
     IF v_conv.creator_id = p_user_id THEN
       RETURN TRUE;
     END IF;
-    
+
     IF EXISTS (
-      SELECT 1 FROM conversation_members 
+      SELECT 1 FROM conversation_members
       WHERE conversation_id = p_conversation_id AND user_id = p_user_id
     ) THEN
       RETURN TRUE;
     END IF;
   END IF;
-  
+
   RETURN FALSE;
 END;
 $$;
@@ -181,7 +254,7 @@ SET search_path = public
 AS $$
 BEGIN
   RETURN QUERY
-  SELECT 
+  SELECT
     c.id,
     c.type,
     c.user1_id,
@@ -194,15 +267,22 @@ BEGIN
     (SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id = c.id) as last_message_at,
     (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id AND m.sender_id != p_user_id AND m.is_read = FALSE) as unread_count
   FROM conversations c
-  WHERE 
-    -- Private conversations
-    (c.type = 'private' AND (c.user1_id = p_user_id OR c.user2_id = p_user_id))
-    OR
-    -- Group conversations (creator or member)
-    (c.type = 'group' AND (
-      c.creator_id = p_user_id 
-      OR EXISTS (SELECT 1 FROM conversation_members cm WHERE cm.conversation_id = c.id AND cm.user_id = p_user_id)
-    ))
+  WHERE
+    -- Exclude soft-deleted conversations
+    NOT EXISTS (
+      SELECT 1 FROM conversation_deletions cd
+      WHERE cd.conversation_id = c.id AND cd.user_id = p_user_id
+    )
+    AND (
+      -- Private conversations
+      (c.type = 'private' AND (c.user1_id = p_user_id OR c.user2_id = p_user_id))
+      OR
+      -- Group conversations (creator or member)
+      (c.type = 'group' AND (
+        c.creator_id = p_user_id
+        OR EXISTS (SELECT 1 FROM conversation_members cm WHERE cm.conversation_id = c.id AND cm.user_id = p_user_id)
+      ))
+    )
   ORDER BY COALESCE(
     (SELECT MAX(m.created_at) FROM messages m WHERE m.conversation_id = c.id),
     c.updated_at
@@ -235,21 +315,21 @@ BEGIN
     v_user1 := p_user2_id;
     v_user2 := p_user1_id;
   END IF;
-  
+
   -- Try to find existing conversation
   SELECT id INTO v_conversation_id
   FROM conversations
   WHERE user1_id = v_user1 AND user2_id = v_user2 AND (type = 'private' OR type IS NULL);
-  
+
   IF FOUND THEN
     RETURN v_conversation_id;
   END IF;
-  
+
   -- Create new conversation
   INSERT INTO conversations (user1_id, user2_id, type)
   VALUES (v_user1, v_user2, 'private')
   RETURNING id INTO v_conversation_id;
-  
+
   RETURN v_conversation_id;
 END;
 $$;
@@ -280,14 +360,14 @@ DECLARE
   v_user_id UUID;
 BEGIN
   v_user_id := auth.uid();
-  
+
   -- Check access
   IF NOT public.user_has_conversation_access(v_user_id, p_conversation_id) THEN
     RETURN; -- Return empty if no access
   END IF;
-  
+
   RETURN QUERY
-  SELECT 
+  SELECT
     m.id,
     m.conversation_id,
     m.sender_id,
@@ -298,7 +378,7 @@ BEGIN
     m.created_at
   FROM messages m
   WHERE m.conversation_id = p_conversation_id
-  ORDER BY 
+  ORDER BY
     CASE WHEN p_newest_first THEN m.created_at END DESC,
     CASE WHEN NOT p_newest_first THEN m.created_at END ASC
   LIMIT p_limit;
@@ -324,20 +404,20 @@ DECLARE
   v_message_id UUID;
 BEGIN
   v_user_id := auth.uid();
-  
+
   -- Check access
   IF NOT public.user_has_conversation_access(v_user_id, p_conversation_id) THEN
     RAISE EXCEPTION 'Access denied to conversation';
   END IF;
-  
+
   -- Insert message
   INSERT INTO messages (conversation_id, sender_id, encrypted_content, iv, message_type)
   VALUES (p_conversation_id, v_user_id, p_encrypted_content, p_iv, p_message_type)
   RETURNING id INTO v_message_id;
-  
+
   -- Update conversation timestamp
   UPDATE conversations SET updated_at = NOW() WHERE id = p_conversation_id;
-  
+
   RETURN v_message_id;
 END;
 $$;
@@ -355,17 +435,17 @@ DECLARE
   v_user_id UUID;
 BEGIN
   v_user_id := auth.uid();
-  
+
   -- Check access
   IF NOT public.user_has_conversation_access(v_user_id, p_conversation_id) THEN
     RETURN;
   END IF;
-  
+
   -- Mark messages from OTHER users as read
-  UPDATE messages 
-  SET is_read = TRUE 
-  WHERE conversation_id = p_conversation_id 
-    AND sender_id != v_user_id 
+  UPDATE messages
+  SET is_read = TRUE
+  WHERE conversation_id = p_conversation_id
+    AND sender_id != v_user_id
     AND is_read = FALSE;
 END;
 $$;
@@ -384,26 +464,31 @@ DECLARE
   v_sender_id UUID;
 BEGIN
   v_user_id := auth.uid();
-  
+
   -- Get message sender
   SELECT sender_id INTO v_sender_id FROM messages WHERE id = p_message_id;
-  
+
   IF NOT FOUND THEN
     RETURN FALSE;
   END IF;
-  
+
   -- Only sender can delete their own message
   IF v_sender_id != v_user_id THEN
     RETURN FALSE;
   END IF;
-  
+
   DELETE FROM messages WHERE id = p_message_id;
   RETURN TRUE;
 END;
 $$;
 
 -- -----------------------------------------------------------------------------
--- Function: Delete a conversation
+-- Function: Delete/Leave a conversation (SOFT DELETE for users)
+-- For groups:
+--   - Creator: HARD deletes entire group (messages, members, conversation)
+--   - Member: SOFT delete (add to deletions) + remove from members (leave)
+-- For private:
+--   - SOFT delete only (add to deletions, conversation remains for other user)
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.delete_conversation(p_conversation_id UUID)
 RETURNS BOOLEAN
@@ -416,33 +501,166 @@ DECLARE
   v_conv RECORD;
 BEGIN
   v_user_id := auth.uid();
-  
+
+  -- Get the specific conversation by ID
   SELECT * INTO v_conv FROM conversations WHERE id = p_conversation_id;
-  
+
   IF NOT FOUND THEN
     RETURN FALSE;
   END IF;
-  
-  -- Check permission: must be participant (private) or creator (group)
-  IF v_conv.type = 'private' THEN
-    IF v_conv.user1_id != v_user_id AND v_conv.user2_id != v_user_id THEN
-      RETURN FALSE;
-    END IF;
-  ELSIF v_conv.type = 'group' THEN
-    IF v_conv.creator_id != v_user_id THEN
+
+  -- Check if already soft-deleted
+  IF EXISTS (
+    SELECT 1 FROM conversation_deletions
+    WHERE conversation_id = p_conversation_id AND user_id = v_user_id
+  ) THEN
+    RETURN TRUE; -- Already deleted for this user
+  END IF;
+
+  -- Handle GROUP conversations
+  IF v_conv.type = 'group' THEN
+    IF v_conv.creator_id = v_user_id THEN
+      -- Creator: HARD delete entire group (with explicit type check)
+      DELETE FROM conversation_deletions WHERE conversation_id = p_conversation_id;
+      DELETE FROM messages WHERE conversation_id = p_conversation_id;
+      DELETE FROM conversation_members WHERE conversation_id = p_conversation_id;
+      DELETE FROM conversations WHERE id = p_conversation_id AND type = 'group';
+      RETURN TRUE;
+    ELSE
+      -- Non-creator member: SOFT delete + leave group
+      IF EXISTS (
+        SELECT 1 FROM conversation_members
+        WHERE conversation_id = p_conversation_id AND user_id = v_user_id
+      ) THEN
+        -- Add soft delete record (hide from user)
+        INSERT INTO conversation_deletions (conversation_id, user_id)
+        VALUES (p_conversation_id, v_user_id)
+        ON CONFLICT (conversation_id, user_id) DO NOTHING;
+
+        -- Remove from group membership
+        DELETE FROM conversation_members
+        WHERE conversation_id = p_conversation_id AND user_id = v_user_id;
+        RETURN TRUE;
+      END IF;
+      -- Not a member
       RETURN FALSE;
     END IF;
   END IF;
-  
-  -- Delete messages first
-  DELETE FROM messages WHERE conversation_id = p_conversation_id;
-  
-  -- Delete members
-  DELETE FROM conversation_members WHERE conversation_id = p_conversation_id;
-  
-  -- Delete conversation
-  DELETE FROM conversations WHERE id = p_conversation_id;
-  
+
+  -- Handle PRIVATE conversations
+  IF v_conv.type = 'private' THEN
+    -- Must be one of the participants
+    IF v_conv.user1_id = v_user_id OR v_conv.user2_id = v_user_id THEN
+      -- SOFT delete only - add to deletions table
+      -- Conversation and messages remain for the other participant
+      INSERT INTO conversation_deletions (conversation_id, user_id)
+      VALUES (p_conversation_id, v_user_id)
+      ON CONFLICT (conversation_id, user_id) DO NOTHING;
+      RETURN TRUE;
+    END IF;
+    RETURN FALSE;
+  END IF;
+
+  -- Unknown type - don't delete
+  RETURN FALSE;
+END;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Function: Add a member to a group (creator only)
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.add_group_member(
+  p_conversation_id UUID,
+  p_new_member_id UUID
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_user_id UUID;
+  v_conv RECORD;
+BEGIN
+  v_user_id := auth.uid();
+
+  -- Get the conversation
+  SELECT * INTO v_conv FROM conversations WHERE id = p_conversation_id;
+
+  IF NOT FOUND THEN
+    RETURN FALSE;
+  END IF;
+
+  -- Must be a group
+  IF v_conv.type != 'group' THEN
+    RETURN FALSE;
+  END IF;
+
+  -- Only creator can add members
+  IF v_conv.creator_id != v_user_id THEN
+    RETURN FALSE;
+  END IF;
+
+  -- Check if already a member
+  IF EXISTS (
+    SELECT 1 FROM conversation_members
+    WHERE conversation_id = p_conversation_id AND user_id = p_new_member_id
+  ) THEN
+    RETURN TRUE; -- Already a member, consider it success
+  END IF;
+
+  -- Add the member
+  INSERT INTO conversation_members (conversation_id, user_id)
+  VALUES (p_conversation_id, p_new_member_id);
+
+  RETURN TRUE;
+END;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Function: Remove/kick a member from a group (creator only)
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.remove_group_member(
+  p_conversation_id UUID,
+  p_member_id UUID
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_user_id UUID;
+  v_conv RECORD;
+BEGIN
+  v_user_id := auth.uid();
+
+  -- Get the conversation
+  SELECT * INTO v_conv FROM conversations WHERE id = p_conversation_id;
+
+  IF NOT FOUND THEN
+    RETURN FALSE;
+  END IF;
+
+  -- Must be a group
+  IF v_conv.type != 'group' THEN
+    RETURN FALSE;
+  END IF;
+
+  -- Only creator can kick members
+  IF v_conv.creator_id != v_user_id THEN
+    RETURN FALSE;
+  END IF;
+
+  -- Creator cannot kick themselves (they should delete the group instead)
+  IF p_member_id = v_user_id THEN
+    RETURN FALSE;
+  END IF;
+
+  -- Remove the member
+  DELETE FROM conversation_members
+  WHERE conversation_id = p_conversation_id AND user_id = p_member_id;
+
   RETURN TRUE;
 END;
 $$;
@@ -516,6 +734,11 @@ BEGIN
     (SELECT COUNT(*) FROM conversation_members cm WHERE cm.conversation_id = c.id)
   FROM conversations c
   WHERE c.type = 'group'
+    -- Exclude soft-deleted conversations
+    AND NOT EXISTS (
+      SELECT 1 FROM conversation_deletions cd
+      WHERE cd.conversation_id = c.id AND cd.user_id = p_user_id
+    )
     AND (
       c.creator_id = p_user_id
       OR EXISTS (
@@ -573,6 +796,8 @@ GRANT EXECUTE ON FUNCTION public.delete_conversation TO authenticated;
 GRANT EXECUTE ON FUNCTION public.create_group_conversation TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_user_group_conversations TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_group_members TO authenticated;
+GRANT EXECUTE ON FUNCTION public.add_group_member TO authenticated;
+GRANT EXECUTE ON FUNCTION public.remove_group_member TO authenticated;
 
 -- =============================================================================
 -- STEP 7: REFRESH POSTGREST SCHEMA CACHE
