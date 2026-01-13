@@ -11,6 +11,7 @@ import {
 import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
+import { NotificationProvider } from "@/lib/use-notifications";
 
 interface User {
   id: string;
@@ -338,7 +339,9 @@ export function AuthGuard({ children }: AuthGuardProps) {
       <AuthContext.Provider
         value={{ user, supabaseUser, isLoading, logout, refreshUser }}
       >
-        {children}
+        <NotificationProvider userId={user?.id}>
+          {children}
+        </NotificationProvider>
       </AuthContext.Provider>
     );
   }

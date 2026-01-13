@@ -807,10 +807,12 @@ export async function getConversations(
 ): Promise<Conversation[]> {
   const supabase = await createServerSupabaseClient();
 
+  // Only fetch private (direct) conversations - group chats handled separately
   const { data, error } = await supabase
     .from("conversations")
     .select("*")
     .or(`user1_id.eq.${userId},user2_id.eq.${userId}`)
+    .eq("type", "private")
     .order("updated_at", { ascending: false });
 
   if (error) {
@@ -869,7 +871,7 @@ export async function getOrCreateConversation(
     return existing;
   }
 
-  // Create new conversation
+  // Create new private conversation
   const { data, error } = await supabase
     .from("conversations")
     .insert({
@@ -877,6 +879,7 @@ export async function getOrCreateConversation(
       user2_id,
       user1_key_encrypted: user1KeyEncrypted,
       user2_key_encrypted: user2KeyEncrypted,
+      type: "private", // Explicitly set type for private DMs
     })
     .select()
     .single();
