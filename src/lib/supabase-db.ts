@@ -808,7 +808,6 @@ export async function getConversations(
   const supabase = await createServerSupabaseClient();
 
   // Fetch conversations where user is a participant
-  // Filter for private/null type to exclude group chats (handled separately)
   const result = await supabase
     .from("conversations")
     .select("*")
@@ -865,41 +864,37 @@ export async function getOrCreateConversation(
 
   const [user1_id, user2_id] = [userId1, userId2].sort();
 
-  // Try to find existing conversation
-  const { data: existing } = await supabase
+  // Try to find existing conversation - use maybeSingle() to avoid error when not found
+  const existingResult = await supabase
     .from("conversations")
     .select("*")
     .eq("user1_id", user1_id)
     .eq("user2_id", user2_id)
-    .single();
+    .maybeSingle();
 
-  if (existing) {
-    return existing;
+  if (existingResult.error) {
+    console.error("Error checking existing conversation:", existingResult.error);
+    throw existingResult.error;
   }
 
-  // Create new private conversation - try with type first, fallback without
-  const insertData: Record<string, unknown> = {
+  if (existingResult.data) {
+    return existingResult.data;
+  }
+
+  // Create new private conversation with type explicitly set
+  const insertData = {
     user1_id,
     user2_id,
     user1_key_encrypted: user1KeyEncrypted,
     user2_key_encrypted: user2KeyEncrypted,
+    type: "private",
   };
 
-  // Try with type column first
-  let result = await supabase
+  const result = await supabase
     .from("conversations")
-    .insert({ ...insertData, type: "private" })
+    .insert(insertData)
     .select()
     .single();
-
-  // If error mentions 'type' column, retry without it
-  if (result.error && result.error.message?.includes("type")) {
-    result = await supabase
-      .from("conversations")
-      .insert(insertData)
-      .select()
-      .single();
-  }
 
   if (result.error) {
     console.error("Error creating conversation:", result.error);
