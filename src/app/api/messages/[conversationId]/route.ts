@@ -6,6 +6,7 @@ import {
   sendMessage,
   markMessagesAsRead,
   deleteConversation,
+  userHasConversationAccess,
 } from "@/lib/supabase-db";
 import {
   checkRateLimit,
@@ -35,22 +36,12 @@ export async function GET(
 
     const { conversationId } = await params;
 
-    // Verify user is part of this conversation
-    const conversation = await getConversationById(conversationId);
-    if (!conversation) {
+    // Verify user has access to this conversation (private or group)
+    const hasAccess = await userHasConversationAccess(user.id, conversationId);
+    if (!hasAccess) {
       return NextResponse.json(
-        { error: "Conversation not found" },
+        { error: "Conversation not found or not authorized" },
         { status: 404 }
-      );
-    }
-
-    if (
-      conversation.user1_id !== user.id &&
-      conversation.user2_id !== user.id
-    ) {
-      return NextResponse.json(
-        { error: "Not authorized to view this conversation" },
-        { status: 403 }
       );
     }
 
@@ -103,22 +94,12 @@ export async function POST(
 
     const { conversationId } = await params;
 
-    // Verify user is part of this conversation
-    const conversation = await getConversationById(conversationId);
-    if (!conversation) {
+    // Verify user has access to this conversation (private or group)
+    const hasAccess = await userHasConversationAccess(user.id, conversationId);
+    if (!hasAccess) {
       return NextResponse.json(
-        { error: "Conversation not found" },
+        { error: "Conversation not found or not authorized" },
         { status: 404 }
-      );
-    }
-
-    if (
-      conversation.user1_id !== user.id &&
-      conversation.user2_id !== user.id
-    ) {
-      return NextResponse.json(
-        { error: "Not authorized to send to this conversation" },
-        { status: 403 }
       );
     }
 
@@ -180,7 +161,7 @@ export async function DELETE(
 
     const { conversationId } = await params;
 
-    // Verify user is part of this conversation
+    // Verify user has access to this conversation
     const conversation = await getConversationById(conversationId);
     if (!conversation) {
       return NextResponse.json(
@@ -189,10 +170,11 @@ export async function DELETE(
       );
     }
 
-    if (
-      conversation.user1_id !== user.id &&
-      conversation.user2_id !== user.id
-    ) {
+    // For delete: must be participant (private) or creator (group)
+    const isParticipant = conversation.user1_id === user.id || conversation.user2_id === user.id;
+    const isCreator = conversation.creator_id === user.id;
+
+    if (!isParticipant && !isCreator) {
       return NextResponse.json(
         { error: "Not authorized to delete this conversation" },
         { status: 403 }

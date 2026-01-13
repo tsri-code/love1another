@@ -64,10 +64,14 @@ export interface Connection {
 
 export interface Conversation {
   id: string;
-  user1_id: string;
-  user2_id: string;
-  user1_key_encrypted: string;
-  user2_key_encrypted: string;
+  user1_id: string | null;
+  user2_id: string | null;
+  user1_key_encrypted: string | null;
+  user2_key_encrypted: string | null;
+  type: "private" | "group" | null;
+  group_name: string | null;
+  group_avatar_path: string | null;
+  creator_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -849,6 +853,54 @@ export async function getConversationById(
   }
 
   return data;
+}
+
+/**
+ * Check if a user has access to a conversation (private or group)
+ */
+export async function userHasConversationAccess(
+  userId: string,
+  conversationId: string
+): Promise<boolean> {
+  const supabase = await createServerSupabaseClient();
+
+  // Use the database function we created to check access
+  const { data, error } = await supabase.rpc("user_has_conversation_access", {
+    p_user_id: userId,
+    p_conversation_id: conversationId,
+  });
+
+  if (error) {
+    console.error("Error checking conversation access:", error);
+    // Fallback: try direct check
+    const conversation = await getConversationById(conversationId);
+    if (!conversation) return false;
+
+    // Check private conversation
+    if (conversation.user1_id === userId || conversation.user2_id === userId) {
+      return true;
+    }
+
+    // Check group creator
+    if (conversation.creator_id === userId) {
+      return true;
+    }
+
+    // Check group membership
+    if (conversation.type === "group") {
+      const { data: member } = await supabase
+        .from("conversation_members")
+        .select("id")
+        .eq("conversation_id", conversationId)
+        .eq("user_id", userId)
+        .maybeSingle();
+      return !!member;
+    }
+
+    return false;
+  }
+
+  return !!data;
 }
 
 /**
