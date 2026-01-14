@@ -53,7 +53,14 @@ export default function LoginPage() {
   useEffect(() => {
     const errorParam = searchParams.get("error");
     if (errorParam) {
-      setError("Authentication failed. Please try again.");
+      if (errorParam === "link_expired") {
+        setError("This password reset link has expired or was already used. Please request a new one.");
+        setMode("forgot-password");
+      } else {
+        setError("Authentication failed. Please try again.");
+      }
+      // Clear the error from URL
+      window.history.replaceState({}, "", "/login");
     }
     
     // Check for success message (e.g., after password reset)
@@ -67,19 +74,10 @@ export default function LoginPage() {
     // Check if this is a password reset flow
     const modeParam = searchParams.get("mode");
     if (modeParam === "reset-password") {
-      // Verify we have a valid session before showing reset form
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session) {
-          setMode("reset-password");
-        } else {
-          // No session - the reset link is invalid or expired
-          setError("Password reset link is invalid or has expired. Please request a new one.");
-          setMode("forgot-password");
-          window.history.replaceState({}, "", "/login");
-        }
-      });
+      // Show the reset password form - updateUser will handle session errors
+      setMode("reset-password");
     }
-  }, [searchParams, supabase.auth]);
+  }, [searchParams]);
 
   const validatePassword = (pwd: string): string | null => {
     if (pwd.length < 6) {

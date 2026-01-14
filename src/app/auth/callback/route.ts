@@ -71,7 +71,11 @@ export async function GET(request: Request) {
     
     if (exchangeError) {
       console.error('Code exchange error:', exchangeError);
-      return NextResponse.redirect(`${origin}/login?error=auth_callback_error`);
+      // Provide specific error for expired/used links
+      const errorMsg = exchangeError.message.includes('expired') || exchangeError.message.includes('invalid')
+        ? 'link_expired'
+        : 'auth_callback_error';
+      return NextResponse.redirect(`${origin}/login?error=${errorMsg}`);
     }
 
     // Determine redirect destination
