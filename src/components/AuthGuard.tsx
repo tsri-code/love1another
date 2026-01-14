@@ -267,10 +267,15 @@ export function AuthGuard({ children }: AuthGuardProps) {
         });
         setIsLoading(false);
       } else if (event === "PASSWORD_RECOVERY" && session) {
+        console.log("🔐 AUTH GUARD - PASSWORD_RECOVERY event detected");
         // Password recovery - maintain session so updateUser() works
         // But redirect to reset password form
         const supabaseUserData = session.user;
         setSupabaseUser(supabaseUserData);
+        console.log(
+          "✅ AUTH GUARD - Session user set for password recovery:",
+          supabaseUserData.email
+        );
         // Don't set user profile - they shouldn't access the app until password is reset
         setIsLoading(false);
 
@@ -279,7 +284,12 @@ export function AuthGuard({ children }: AuthGuardProps) {
           !pathname.includes("mode=reset-password") &&
           pathname !== "/login"
         ) {
+          console.log("🔀 AUTH GUARD - Redirecting to password reset form");
           router.push("/login?mode=reset-password");
+        } else {
+          console.log(
+            "✅ AUTH GUARD - Already on password reset page, no redirect needed"
+          );
         }
       } else if (event === "SIGNED_OUT") {
         setUser(null);

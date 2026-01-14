@@ -31,12 +31,14 @@ export async function GET(request: Request) {
   const type = searchParams.get('type');
   const isRecovery = type === 'recovery';
   
+  console.log('🔐 AUTH CALLBACK - Starting', { hasCode: !!code, isRecovery, type });
+  
   // Check for error
   const error = searchParams.get('error');
   const errorDescription = searchParams.get('error_description');
   
   if (error) {
-    console.error('Auth callback error:', error, errorDescription);
+    console.error('❌ AUTH CALLBACK - Error in URL params:', error, errorDescription);
     return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(error)}`);
   }
 
@@ -52,6 +54,7 @@ export async function GET(request: Request) {
           return cookieStore.getAll();
         },
         setAll(newCookies: { name: string; value: string; options?: CookieOptions }[]) {
+          console.log('🍪 AUTH CALLBACK - Setting cookies:', newCookies.length);
           // Store cookies to set on the redirect response
           cookiesToSet.push(...newCookies);
           // Also try to set on cookie store (may fail in Route Handler)
@@ -66,15 +69,21 @@ export async function GET(request: Request) {
       },
     });
     
+    console.log('🔄 AUTH CALLBACK - Exchanging code for session...');
     // Exchange the code for a session
-    const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+    const { error: exchangeError, data } = await supabase.auth.exchangeCodeForSession(code);
+    
+    if (data?.session) {
+      console.log('✅ AUTH CALLBACK - Code exchange SUCCESS, session established');
+    }
     
     if (exchangeError) {
-      console.error('Code exchange error:', exchangeError);
+      console.error('❌ AUTH CALLBACK - Code exchange FAILED:', exchangeError.message);
       // Provide specific error for expired/used links
       const errorMsg = exchangeError.message.includes('expired') || exchangeError.message.includes('invalid')
         ? 'link_expired'
         : 'auth_callback_error';
+      console.log(`🔀 AUTH CALLBACK - Redirecting to login with error: ${errorMsg}`);
       return NextResponse.redirect(`${origin}/login?error=${errorMsg}`);
     }
 
@@ -87,6 +96,9 @@ export async function GET(request: Request) {
     const redirectUrl = isRecovery 
       ? `${baseUrl}/login?mode=reset-password`
       : `${baseUrl}${next}`;
+    
+    console.log(`🔀 AUTH CALLBACK - Redirecting to: ${redirectUrl}`);
+    console.log(`🍪 AUTH CALLBACK - Setting ${cookiesToSet.length} cookies on redirect`);
     
     const response = NextResponse.redirect(redirectUrl);
     

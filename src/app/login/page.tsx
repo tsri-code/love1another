@@ -51,8 +51,15 @@ export default function LoginPage() {
 
   // Check for error, success, or mode in URL params (from auth callback or password reset)
   useEffect(() => {
+    console.log("📄 LOGIN PAGE - Loaded with params:", {
+      error: searchParams.get("error"),
+      success: searchParams.get("success"),
+      mode: searchParams.get("mode")
+    });
+    
     const errorParam = searchParams.get("error");
     if (errorParam) {
+      console.log("❌ LOGIN PAGE - Error param detected:", errorParam);
       if (errorParam === "link_expired") {
         setError("This password reset link has expired or was already used. Please request a new one.");
         setMode("forgot-password");
@@ -66,6 +73,7 @@ export default function LoginPage() {
     // Check for success message (e.g., after password reset)
     const successParam = searchParams.get("success");
     if (successParam === "password_updated") {
+      console.log("✅ LOGIN PAGE - Password updated successfully message shown");
       setSuccess("Password updated successfully! Please sign in with your new password.");
       // Clear the URL parameter after showing the message
       window.history.replaceState({}, "", "/login");
@@ -74,6 +82,7 @@ export default function LoginPage() {
     // Check if this is a password reset flow
     const modeParam = searchParams.get("mode");
     if (modeParam === "reset-password") {
+      console.log("🔑 LOGIN PAGE - Password reset mode detected, showing form");
       // Show the reset password form - updateUser will handle session errors
       setMode("reset-password");
     }
@@ -518,8 +527,11 @@ export default function LoginPage() {
     setSuccess("");
     setIsLoading(true);
 
+    console.log("🔐 PASSWORD UPDATE - Starting password update");
+
     // Validate passwords match
     if (newPassword !== confirmNewPassword) {
+      console.log("❌ PASSWORD UPDATE - Passwords don't match");
       setError("Passwords do not match");
       setIsLoading(false);
       return;
@@ -528,10 +540,24 @@ export default function LoginPage() {
     // Validate password strength
     const passwordError = validatePassword(newPassword);
     if (passwordError) {
+      console.log("❌ PASSWORD UPDATE - Validation failed:", passwordError);
       setError(passwordError);
       setIsLoading(false);
       return;
     }
+
+    // Check session before attempting update
+    console.log("🔍 PASSWORD UPDATE - Checking for valid session...");
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!session) {
+      console.error("❌ PASSWORD UPDATE - No session found! Link may be expired or already used.");
+      setError("This password reset link has expired or was already used. Please request a new one.");
+      setIsLoading(false);
+      return;
+    }
+    
+    console.log("✅ PASSWORD UPDATE - Session found, attempting to update password");
 
     try {
       const { error: updateError } = await supabase.auth.updateUser({
@@ -539,6 +565,7 @@ export default function LoginPage() {
       });
 
       if (updateError) {
+        console.error("❌ PASSWORD UPDATE - Update failed:", updateError.message);
         // Provide user-friendly error messages
         if (updateError.message.includes("session") || updateError.message.includes("Auth")) {
           setError("This password reset link has expired or was already used. Please request a new one.");
@@ -549,16 +576,20 @@ export default function LoginPage() {
         return;
       }
 
+      console.log("✅ PASSWORD UPDATE - Password updated successfully!");
+
       // IMPORTANT: Sign out the user after password reset for security
       // They must log in again with their new password
+      console.log("🚪 PASSWORD UPDATE - Signing out user for security");
       try {
         await supabase.auth.signOut({ scope: "local" });
-      } catch {
-        // Ignore signout errors
+      } catch (signoutError) {
+        console.warn("⚠️ PASSWORD UPDATE - Signout error (non-critical):", signoutError);
       }
       
       setSuccess("Password updated! Redirecting to login...");
       
+      console.log("🔀 PASSWORD UPDATE - Redirecting to login page");
       // Full page redirect to login with success message
       // This ensures clean state after password reset
       await new Promise(resolve => setTimeout(resolve, 1500));
