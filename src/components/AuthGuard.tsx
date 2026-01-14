@@ -150,13 +150,17 @@ export function AuthGuard({ children }: AuthGuardProps) {
       // The 403 error on global scope is harmless but we'll avoid it
       try {
         await supabase.auth.signOut({ scope: "local" });
-      } catch (error: any) {
+      } catch (error) {
         // If local scope fails or isn't supported, try without scope
         // This is a non-critical error - user is already logged out locally
-        if (error?.status !== 403) {
+        const status =
+          error && typeof error === "object" && "status" in error
+            ? (error as { status?: number }).status
+            : undefined;
+        if (status !== 403) {
           try {
             await supabase.auth.signOut();
-          } catch (e) {
+          } catch {
             // Silently ignore - logout still works
           }
         }
@@ -175,6 +179,13 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
   // Listen for auth state changes - this is the ONLY place we check auth
   useEffect(() => {
+    const isPasswordRecoveryFlow = () => {
+      if (pathname !== "/login") return false;
+      if (typeof window === "undefined") return false;
+      const params = new URLSearchParams(window.location.search);
+      return params.get("mode") === "reset-password" || params.has("code");
+    };
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -182,9 +193,10 @@ export function AuthGuard({ children }: AuthGuardProps) {
         // This fires when Supabase has loaded the initial session from storage
         const rememberMe = localStorage.getItem("rememberMe");
         const sessionActive = sessionStorage.getItem("sessionActive");
+        const isRecoveryFlow = isPasswordRecoveryFlow();
 
         // Handle "Remember Me" logic
-        if (!rememberMe && !sessionActive && session) {
+        if (!rememberMe && !sessionActive && session && !isRecoveryFlow) {
           // User didn't want to be remembered, and this is a new browser session
           await supabase.auth.signOut();
           setUser(null);
@@ -209,6 +221,11 @@ export function AuthGuard({ children }: AuthGuardProps) {
           // Session exists, set user data
           const supabaseUserData = session.user;
           setSupabaseUser(supabaseUserData);
+
+          if (isRecoveryFlow) {
+            setIsLoading(false);
+            return;
+          }
 
           const metadata = supabaseUserData.user_metadata || {};
           const fullName =
@@ -245,8 +262,14 @@ export function AuthGuard({ children }: AuthGuardProps) {
         }
         setIsLoading(false);
       } else if (event === "SIGNED_IN" && session) {
+        const isRecoveryFlow = isPasswordRecoveryFlow();
         const supabaseUserData = session.user;
         setSupabaseUser(supabaseUserData);
+
+        if (isRecoveryFlow) {
+          setIsLoading(false);
+          return;
+        }
 
         const metadata = supabaseUserData.user_metadata || {};
         const fullName =

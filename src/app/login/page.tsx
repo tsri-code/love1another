@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import { useCrypto } from "@/lib/use-crypto";
@@ -42,6 +42,7 @@ export default function LoginPage() {
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const hasExchangedCodeRef = useRef(false);
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -74,7 +75,18 @@ export default function LoginPage() {
     const modeParam = searchParams.get("mode");
     
     if (code && modeParam === "reset-password") {
+      if (hasExchangedCodeRef.current) {
+        console.log("ℹ️ LOGIN PAGE - Code exchange already attempted, skipping");
+        return;
+      }
+      hasExchangedCodeRef.current = true;
+
       console.log("🔄 LOGIN PAGE - Password recovery code detected, exchanging...");
+
+      // Mark session as active to prevent AuthGuard auto-signout
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem("sessionActive", "true");
+      }
       
       const exchangeCode = async () => {
         try {
@@ -144,6 +156,9 @@ export default function LoginPage() {
     const hasCode = searchParams.get("code");
     if (modeParam === "reset-password" && !hasCode) {
       console.log("🔑 LOGIN PAGE - Password reset mode detected (no code), showing form");
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem("sessionActive", "true");
+      }
       // Show the reset password form
       setMode("reset-password");
     }
@@ -643,6 +658,10 @@ export default function LoginPage() {
         await supabase.auth.signOut({ scope: "local" });
       } catch (signoutError) {
         console.warn("⚠️ PASSWORD UPDATE - Signout error (non-critical):", signoutError);
+      }
+
+      if (typeof window !== "undefined") {
+        sessionStorage.removeItem("sessionActive");
       }
       
       setSuccess("Password updated! Redirecting to login...");
