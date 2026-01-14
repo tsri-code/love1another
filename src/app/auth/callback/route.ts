@@ -1,5 +1,9 @@
-import { createServerSupabaseClient } from '@/lib/supabase-server';
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 /**
  * Auth callback handler for Supabase
@@ -37,7 +41,30 @@ export async function GET(request: Request) {
   }
 
   if (code) {
-    const supabase = await createServerSupabaseClient();
+    const cookieStore = await cookies();
+    
+    // Track cookies that need to be set on the response
+    const cookiesToSet: { name: string; value: string; options?: CookieOptions }[] = [];
+    
+    const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll(newCookies: { name: string; value: string; options?: CookieOptions }[]) {
+          // Store cookies to set on the redirect response
+          cookiesToSet.push(...newCookies);
+          // Also try to set on cookie store (may fail in Route Handler)
+          try {
+            newCookies.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            );
+          } catch {
+            // Ignore - we'll set on redirect response
+          }
+        },
+      },
+    });
     
     // Exchange the code for a session
     const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
@@ -52,13 +79,25 @@ export async function GET(request: Request) {
     const isLocalEnv = process.env.NODE_ENV === 'development';
     const baseUrl = isLocalEnv ? origin : (forwardedHost ? `https://${forwardedHost}` : origin);
     
-    // If this is a password recovery, redirect to the reset password form
-    if (isRecovery) {
-      return NextResponse.redirect(`${baseUrl}/login?mode=reset-password`);
-    }
-
-    // Successful auth - redirect to the app
-    return NextResponse.redirect(`${baseUrl}${next}`);
+    // Create redirect response
+    const redirectUrl = isRecovery 
+      ? `${baseUrl}/login?mode=reset-password`
+      : `${baseUrl}${next}`;
+    
+    const response = NextResponse.redirect(redirectUrl);
+    
+    // Set all cookies on the redirect response
+    cookiesToSet.forEach(({ name, value, options }) => {
+      response.cookies.set(name, value, {
+        path: '/',
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 60 * 60 * 24 * 7, // 7 days
+        ...options,
+      });
+    });
+    
+    return response;
   }
 
   // If there's no code or an error occurred, redirect to login with error

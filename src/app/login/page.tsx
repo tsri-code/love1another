@@ -67,9 +67,19 @@ export default function LoginPage() {
     // Check if this is a password reset flow
     const modeParam = searchParams.get("mode");
     if (modeParam === "reset-password") {
-      setMode("reset-password");
+      // Verify we have a valid session before showing reset form
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) {
+          setMode("reset-password");
+        } else {
+          // No session - the reset link is invalid or expired
+          setError("Password reset link is invalid or has expired. Please request a new one.");
+          setMode("forgot-password");
+          window.history.replaceState({}, "", "/login");
+        }
+      });
     }
-  }, [searchParams]);
+  }, [searchParams, supabase.auth]);
 
   const validatePassword = (pwd: string): string | null => {
     if (pwd.length < 6) {
@@ -531,7 +541,12 @@ export default function LoginPage() {
       });
 
       if (updateError) {
-        setError(updateError.message);
+        // Provide user-friendly error messages
+        if (updateError.message.includes("session") || updateError.message.includes("Auth")) {
+          setError("This password reset link has expired or was already used. Please request a new one.");
+        } else {
+          setError(updateError.message);
+        }
         setIsLoading(false);
         return;
       }
@@ -1341,7 +1356,7 @@ export default function LoginPage() {
               type="submit"
               className="btn btn-primary btn-full btn-lg"
               disabled={isLoading || !newPassword || !confirmNewPassword}
-              style={{ background: "#3b82f6" }}
+              style={{ background: "#3b82f6", marginBottom: "var(--space-md)" }}
             >
               {isLoading ? (
                 <span
@@ -1355,6 +1370,31 @@ export default function LoginPage() {
                 "Update Password"
               )}
             </button>
+
+            <p
+              className="text-[var(--text-muted)]"
+              style={{
+                fontSize: "var(--text-xs)",
+                textAlign: "center",
+                marginBottom: "var(--space-sm)",
+              }}
+            >
+              Link expired?{" "}
+              <button
+                type="button"
+                onClick={() => switchMode("forgot-password")}
+                className="text-[var(--accent)] hover:underline"
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  fontSize: "inherit",
+                  padding: 0,
+                }}
+              >
+                Request a new one
+              </button>
+            </p>
           </form>
         )}
 

@@ -267,10 +267,20 @@ export function AuthGuard({ children }: AuthGuardProps) {
         });
         setIsLoading(false);
       } else if (event === "PASSWORD_RECOVERY" && session) {
-        // Password recovery - redirect to reset password form
-        // Don't set user as logged in, just redirect to reset form
+        // Password recovery - maintain session so updateUser() works
+        // But redirect to reset password form
+        const supabaseUserData = session.user;
+        setSupabaseUser(supabaseUserData);
+        // Don't set user profile - they shouldn't access the app until password is reset
         setIsLoading(false);
-        router.push("/login?mode=reset-password");
+
+        // Only redirect if not already on reset password page
+        if (
+          !pathname.includes("mode=reset-password") &&
+          pathname !== "/login"
+        ) {
+          router.push("/login?mode=reset-password");
+        }
       } else if (event === "SIGNED_OUT") {
         setUser(null);
         setSupabaseUser(null);
