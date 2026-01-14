@@ -43,6 +43,9 @@ export default function LoginPage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const hasExchangedCodeRef = useRef(false);
+  const [useRecoveryCode, setUseRecoveryCode] = useState(false);
+  const [recoveryEmail, setRecoveryEmail] = useState("");
+  const [recoveryCode, setRecoveryCode] = useState("");
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -54,7 +57,7 @@ export default function LoginPage() {
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       console.log("🔔 LOGIN PAGE - Auth state change:", event);
-      
+
       if (event === "PASSWORD_RECOVERY") {
         console.log("🔐 LOGIN PAGE - PASSWORD_RECOVERY event received!");
         if (session) {
@@ -65,7 +68,7 @@ export default function LoginPage() {
         window.history.replaceState({}, "", "/login?mode=reset-password");
       }
     });
-    
+
     return () => subscription.unsubscribe();
   }, [supabase.auth]);
 
@@ -73,7 +76,7 @@ export default function LoginPage() {
   useEffect(() => {
     const code = searchParams.get("code");
     const modeParam = searchParams.get("mode");
-    
+
     if (code && modeParam === "reset-password") {
       if (hasExchangedCodeRef.current) {
         console.log("ℹ️ LOGIN PAGE - Code exchange already attempted, skipping");
@@ -87,11 +90,11 @@ export default function LoginPage() {
       if (typeof window !== "undefined") {
         sessionStorage.setItem("sessionActive", "true");
       }
-      
+
       const exchangeCode = async () => {
         try {
           const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-          
+
           if (error) {
             console.error("❌ LOGIN PAGE - Code exchange failed:", error.message);
             setError("This password reset link has expired or was already used. Please request a new one.");
@@ -99,7 +102,7 @@ export default function LoginPage() {
             window.history.replaceState({}, "", "/login");
             return;
           }
-          
+
           if (data.session) {
             console.log("✅ LOGIN PAGE - Code exchange successful, session established");
             console.log("👤 LOGIN PAGE - User:", data.session.user.email);
@@ -115,7 +118,7 @@ export default function LoginPage() {
           window.history.replaceState({}, "", "/login");
         }
       };
-      
+
       exchangeCode();
     }
   }, [searchParams, supabase.auth]);
@@ -128,7 +131,7 @@ export default function LoginPage() {
       mode: searchParams.get("mode"),
       hasCode: !!searchParams.get("code")
     });
-    
+
     const errorParam = searchParams.get("error");
     if (errorParam) {
       console.log("❌ LOGIN PAGE - Error param detected:", errorParam);
@@ -141,7 +144,7 @@ export default function LoginPage() {
       // Clear the error from URL
       window.history.replaceState({}, "", "/login");
     }
-    
+
     // Check for success message (e.g., after password reset)
     const successParam = searchParams.get("success");
     if (successParam === "password_updated") {
@@ -150,7 +153,7 @@ export default function LoginPage() {
       // Clear the URL parameter after showing the message
       window.history.replaceState({}, "", "/login");
     }
-    
+
     // Check if this is a password reset flow (without code - code handled separately)
     const modeParam = searchParams.get("mode");
     const hasCode = searchParams.get("code");
@@ -429,7 +432,7 @@ export default function LoginPage() {
           }
 
           await unlock(userKeys, password, data.user.id);
-          
+
           // Wait for session to be fully established before navigating
           await new Promise(resolve => setTimeout(resolve, 300));
           window.location.href = "/";
@@ -527,11 +530,11 @@ export default function LoginPage() {
         // Show redirecting overlay
         setIsRedirecting(true);
         setIsLoading(true);
-        
+
         // Wait for session to be fully established before navigating
         // This prevents race conditions with AuthGuard
         await new Promise(resolve => setTimeout(resolve, 500));
-        
+
         // Force a full page reload to ensure AuthGuard picks up the new session
         window.location.href = "/";
       }
@@ -627,14 +630,50 @@ export default function LoginPage() {
     console.log("🔄 PASSWORD UPDATE - Attempting to update password directly...");
 
     try {
+      if (useRecoveryCode || recoveryCode.trim()) {
+        if (!recoveryEmail.trim()) {
+          setError("Please enter your email to use the recovery code.");
+          setIsLoading(false);
+          return;
+        }
+        if (!recoveryCode.trim()) {
+          setError("Please enter the recovery code from your email.");
+          setIsLoading(false);
+          return;
+        }
+
+        console.log("🔑 PASSWORD UPDATE - Verifying recovery code...");
+        const { error: verifyError, data: verifyData } =
+          await supabase.auth.verifyOtp({
+            email: recoveryEmail.trim(),
+            token: recoveryCode.trim(),
+            type: "recovery",
+          });
+
+        if (verifyError) {
+          console.error("❌ PASSWORD UPDATE - Recovery code invalid:", verifyError);
+          setError(
+            "Recovery code is invalid or expired. Please request a new reset email."
+          );
+          setIsLoading(false);
+          return;
+        }
+
+        if (verifyData?.session) {
+          console.log(
+            "✅ PASSWORD UPDATE - Recovery code verified, session established"
+          );
+        }
+      }
+
       const { error: updateError, data } = await supabase.auth.updateUser({
         password: newPassword,
       });
 
-      console.log("📊 PASSWORD UPDATE - Response:", { 
-        hasError: !!updateError, 
+      console.log("📊 PASSWORD UPDATE - Response:", {
+        hasError: !!updateError,
         errorMessage: updateError?.message,
-        hasUser: !!data?.user 
+        hasUser: !!data?.user
       });
 
       if (updateError) {
@@ -663,9 +702,9 @@ export default function LoginPage() {
       if (typeof window !== "undefined") {
         sessionStorage.removeItem("sessionActive");
       }
-      
+
       setSuccess("Password updated! Redirecting to login...");
-      
+
       console.log("🔀 PASSWORD UPDATE - Redirecting to login page");
       // Full page redirect to login with success message
       // This ensures clean state after password reset
@@ -708,6 +747,9 @@ export default function LoginPage() {
     setResetEmail(""); // Clear reset email when switching modes
     setNewPassword("");
     setConfirmNewPassword("");
+    setUseRecoveryCode(false);
+    setRecoveryEmail("");
+    setRecoveryCode("");
   };
 
   const switchMode = (newMode: AuthMode) => {
@@ -1435,6 +1477,69 @@ export default function LoginPage() {
                 required
               />
             </div>
+
+            <div className="form-group">
+              <button
+                type="button"
+                onClick={() => setUseRecoveryCode((prev) => !prev)}
+                className="text-[var(--accent)] hover:underline"
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  fontSize: "var(--text-xs)",
+                  padding: 0,
+                  marginBottom: "var(--space-sm)",
+                }}
+              >
+                {useRecoveryCode
+                  ? "Hide recovery code option"
+                  : "Having trouble with the link? Use a recovery code instead"}
+              </button>
+            </div>
+
+            {useRecoveryCode && (
+              <div
+                style={{
+                  border: "1px solid var(--border-color)",
+                  borderRadius: "12px",
+                  padding: "var(--space-md)",
+                  marginBottom: "var(--space-md)",
+                }}
+              >
+                <div className="form-group">
+                  <label className="label" htmlFor="recoveryEmail">
+                    Email Address
+                  </label>
+                  <input
+                    id="recoveryEmail"
+                    type="email"
+                    className={`input ${error ? "input-error" : ""}`}
+                    placeholder="Enter your email address"
+                    value={recoveryEmail}
+                    onChange={(e) => setRecoveryEmail(e.target.value)}
+                    autoComplete="email"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="label" htmlFor="recoveryCode">
+                    Recovery Code
+                  </label>
+                  <input
+                    id="recoveryCode"
+                    type="text"
+                    className={`input ${error ? "input-error" : ""}`}
+                    placeholder="Enter the recovery code from email"
+                    value={recoveryCode}
+                    onChange={(e) => setRecoveryCode(e.target.value)}
+                    autoComplete="one-time-code"
+                  />
+                </div>
+                <p className="text-[var(--text-muted)]" style={{ fontSize: "var(--text-xs)" }}>
+                  This code comes from the reset email. Use this if the link was opened in a different browser.
+                </p>
+              </div>
+            )}
 
             {error && (
               <div
