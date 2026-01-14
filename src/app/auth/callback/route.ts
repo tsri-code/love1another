@@ -19,7 +19,8 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
  * 4. User is redirected to the app (or password reset form if recovery)
  */
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url);
+  const requestUrl = request.url;
+  const { searchParams, origin } = new URL(requestUrl);
   
   // Get the auth code from query params
   const code = searchParams.get('code');
@@ -31,7 +32,13 @@ export async function GET(request: Request) {
   const type = searchParams.get('type');
   const isRecovery = type === 'recovery';
   
-  console.log('🔐 AUTH CALLBACK - Starting', { hasCode: !!code, isRecovery, type });
+  console.log('🔐 AUTH CALLBACK - Starting', { 
+    hasCode: !!code, 
+    isRecovery, 
+    type,
+    fullUrl: requestUrl,
+    timestamp: new Date().toISOString()
+  });
   
   // Check for error
   const error = searchParams.get('error');
@@ -104,13 +111,18 @@ export async function GET(request: Request) {
     
     // Set all cookies on the redirect response
     cookiesToSet.forEach(({ name, value, options }) => {
-      response.cookies.set(name, value, {
+      const cookieOptions = {
         path: '/',
-        sameSite: 'lax',
+        sameSite: 'lax' as const,
         secure: process.env.NODE_ENV === 'production',
         maxAge: 60 * 60 * 24 * 7, // 7 days
+        domain: process.env.NODE_ENV === 'production' ? 'love1another.app' : undefined,
         ...options,
-      });
+      };
+      
+      console.log(`🍪 AUTH CALLBACK - Setting cookie: ${name}`, cookieOptions);
+      
+      response.cookies.set(name, value, cookieOptions);
     });
     
     return response;

@@ -83,10 +83,27 @@ export default function LoginPage() {
     const modeParam = searchParams.get("mode");
     if (modeParam === "reset-password") {
       console.log("🔑 LOGIN PAGE - Password reset mode detected, showing form");
+      
+      // Check if we have a session immediately
+      supabase.auth.getSession().then(({ data: { session }, error }) => {
+        if (error) {
+          console.error("❌ LOGIN PAGE - Error getting session:", error);
+        }
+        if (session) {
+          console.log("✅ LOGIN PAGE - Session EXISTS on page load:", {
+            user: session.user.email,
+            expiresAt: new Date(session.expires_at! * 1000).toLocaleString()
+          });
+        } else {
+          console.error("❌ LOGIN PAGE - NO SESSION found on page load! Cookies may not have been set by callback.");
+          console.log("🍪 LOGIN PAGE - Current cookies:", document.cookie);
+        }
+      });
+      
       // Show the reset password form - updateUser will handle session errors
       setMode("reset-password");
     }
-  }, [searchParams]);
+  }, [searchParams, supabase.auth]);
 
   const validatePassword = (pwd: string): string | null => {
     if (pwd.length < 6) {
