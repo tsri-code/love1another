@@ -528,11 +528,22 @@ export default function LoginPage() {
         return;
       }
 
-      setSuccess("Password updated successfully! Redirecting...");
+      // IMPORTANT: Sign out the user after password reset for security
+      // They must log in again with their new password
+      await supabase.auth.signOut({ scope: "local" });
       
-      // Redirect to home after successful password update
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      window.location.href = "/";
+      setSuccess("Password updated! Please sign in with your new password.");
+      
+      // Switch to login mode after a brief delay
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      setMode("login");
+      setNewPassword("");
+      setConfirmNewPassword("");
+      setSuccess("");
+      setIsLoading(false);
+      
+      // Clear the URL parameter
+      window.history.replaceState({}, "", "/login");
     } catch (err) {
       console.error("Password update error:", err);
       setError("Failed to update password. Please try again.");

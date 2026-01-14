@@ -266,6 +266,11 @@ export function AuthGuard({ children }: AuthGuardProps) {
           avatarPath: metadata.avatar_path || null,
         });
         setIsLoading(false);
+      } else if (event === "PASSWORD_RECOVERY" && session) {
+        // Password recovery - redirect to reset password form
+        // Don't set user as logged in, just redirect to reset form
+        setIsLoading(false);
+        router.push("/login?mode=reset-password");
       } else if (event === "SIGNED_OUT") {
         setUser(null);
         setSupabaseUser(null);
