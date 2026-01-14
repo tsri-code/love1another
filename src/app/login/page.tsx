@@ -49,11 +49,19 @@ export default function LoginPage() {
   const { generateKeys, unlock, cryptoSupported, missingFeatures } =
     useCrypto();
 
-  // Check for error or mode in URL params (from auth callback)
+  // Check for error, success, or mode in URL params (from auth callback or password reset)
   useEffect(() => {
     const errorParam = searchParams.get("error");
     if (errorParam) {
       setError("Authentication failed. Please try again.");
+    }
+    
+    // Check for success message (e.g., after password reset)
+    const successParam = searchParams.get("success");
+    if (successParam === "password_updated") {
+      setSuccess("Password updated successfully! Please sign in with your new password.");
+      // Clear the URL parameter after showing the message
+      window.history.replaceState({}, "", "/login");
     }
     
     // Check if this is a password reset flow
@@ -530,20 +538,18 @@ export default function LoginPage() {
 
       // IMPORTANT: Sign out the user after password reset for security
       // They must log in again with their new password
-      await supabase.auth.signOut({ scope: "local" });
+      try {
+        await supabase.auth.signOut({ scope: "local" });
+      } catch {
+        // Ignore signout errors
+      }
       
-      setSuccess("Password updated! Please sign in with your new password.");
+      setSuccess("Password updated! Redirecting to login...");
       
-      // Switch to login mode after a brief delay
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      setMode("login");
-      setNewPassword("");
-      setConfirmNewPassword("");
-      setSuccess("");
-      setIsLoading(false);
-      
-      // Clear the URL parameter
-      window.history.replaceState({}, "", "/login");
+      // Full page redirect to login with success message
+      // This ensures clean state after password reset
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      window.location.href = "/login?success=password_updated";
     } catch (err) {
       console.error("Password update error:", err);
       setError("Failed to update password. Please try again.");
