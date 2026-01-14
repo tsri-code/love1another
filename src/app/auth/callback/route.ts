@@ -50,6 +50,19 @@ export async function GET(request: Request) {
   }
 
   if (code) {
+    // For password recovery, pass the code to the client to handle
+    // This ensures the client-side Supabase client properly establishes the session
+    if (isRecovery) {
+      console.log('🔄 AUTH CALLBACK - Password recovery detected, passing code to client');
+      const forwardedHost = request.headers.get('x-forwarded-host');
+      const isLocalEnv = process.env.NODE_ENV === 'development';
+      const baseUrl = isLocalEnv ? origin : (forwardedHost ? `https://${forwardedHost}` : origin);
+      
+      // Pass the code to the login page for client-side exchange
+      return NextResponse.redirect(`${baseUrl}/login?mode=reset-password&code=${code}`);
+    }
+    
+    // For regular auth (not recovery), do server-side exchange
     const cookieStore = await cookies();
     
     // Track cookies that need to be set on the response
@@ -99,15 +112,10 @@ export async function GET(request: Request) {
     const isLocalEnv = process.env.NODE_ENV === 'development';
     const baseUrl = isLocalEnv ? origin : (forwardedHost ? `https://${forwardedHost}` : origin);
     
-    // Create redirect response
-    const redirectUrl = isRecovery 
-      ? `${baseUrl}/login?mode=reset-password`
-      : `${baseUrl}${next}`;
-    
-    console.log(`🔀 AUTH CALLBACK - Redirecting to: ${redirectUrl}`);
+    console.log(`🔀 AUTH CALLBACK - Redirecting to: ${baseUrl}${next}`);
     console.log(`🍪 AUTH CALLBACK - Setting ${cookiesToSet.length} cookies on redirect`);
     
-    const response = NextResponse.redirect(redirectUrl);
+    const response = NextResponse.redirect(`${baseUrl}${next}`);
     
     // Set all cookies on the redirect response
     cookiesToSet.forEach(({ name, value, options }) => {

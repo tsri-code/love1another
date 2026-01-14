@@ -49,12 +49,72 @@ export default function LoginPage() {
   const { generateKeys, unlock, cryptoSupported, missingFeatures } =
     useCrypto();
 
+  // Listen for PASSWORD_RECOVERY event - this is the recommended way to handle password reset
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log("🔔 LOGIN PAGE - Auth state change:", event);
+      
+      if (event === "PASSWORD_RECOVERY") {
+        console.log("🔐 LOGIN PAGE - PASSWORD_RECOVERY event received!");
+        if (session) {
+          console.log("✅ LOGIN PAGE - Recovery session active for:", session.user.email);
+        }
+        setMode("reset-password");
+        // Clear URL params but keep mode
+        window.history.replaceState({}, "", "/login?mode=reset-password");
+      }
+    });
+    
+    return () => subscription.unsubscribe();
+  }, [supabase.auth]);
+
+  // Handle code exchange for password recovery (client-side)
+  useEffect(() => {
+    const code = searchParams.get("code");
+    const modeParam = searchParams.get("mode");
+    
+    if (code && modeParam === "reset-password") {
+      console.log("🔄 LOGIN PAGE - Password recovery code detected, exchanging...");
+      
+      const exchangeCode = async () => {
+        try {
+          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+          
+          if (error) {
+            console.error("❌ LOGIN PAGE - Code exchange failed:", error.message);
+            setError("This password reset link has expired or was already used. Please request a new one.");
+            setMode("forgot-password");
+            window.history.replaceState({}, "", "/login");
+            return;
+          }
+          
+          if (data.session) {
+            console.log("✅ LOGIN PAGE - Code exchange successful, session established");
+            console.log("👤 LOGIN PAGE - User:", data.session.user.email);
+            // Keep showing the reset password form
+            setMode("reset-password");
+            // Clear the code from URL
+            window.history.replaceState({}, "", "/login?mode=reset-password");
+          }
+        } catch (err) {
+          console.error("❌ LOGIN PAGE - Code exchange error:", err);
+          setError("Failed to process password reset link. Please request a new one.");
+          setMode("forgot-password");
+          window.history.replaceState({}, "", "/login");
+        }
+      };
+      
+      exchangeCode();
+    }
+  }, [searchParams, supabase.auth]);
+
   // Check for error, success, or mode in URL params (from auth callback or password reset)
   useEffect(() => {
     console.log("📄 LOGIN PAGE - Loaded with params:", {
       error: searchParams.get("error"),
       success: searchParams.get("success"),
-      mode: searchParams.get("mode")
+      mode: searchParams.get("mode"),
+      hasCode: !!searchParams.get("code")
     });
     
     const errorParam = searchParams.get("error");
@@ -79,31 +139,15 @@ export default function LoginPage() {
       window.history.replaceState({}, "", "/login");
     }
     
-    // Check if this is a password reset flow
+    // Check if this is a password reset flow (without code - code handled separately)
     const modeParam = searchParams.get("mode");
-    if (modeParam === "reset-password") {
-      console.log("🔑 LOGIN PAGE - Password reset mode detected, showing form");
-      
-      // Check if we have a session immediately
-      supabase.auth.getSession().then(({ data: { session }, error }) => {
-        if (error) {
-          console.error("❌ LOGIN PAGE - Error getting session:", error);
-        }
-        if (session) {
-          console.log("✅ LOGIN PAGE - Session EXISTS on page load:", {
-            user: session.user.email,
-            expiresAt: new Date(session.expires_at! * 1000).toLocaleString()
-          });
-        } else {
-          console.error("❌ LOGIN PAGE - NO SESSION found on page load! Cookies may not have been set by callback.");
-          console.log("🍪 LOGIN PAGE - Current cookies:", document.cookie);
-        }
-      });
-      
-      // Show the reset password form - updateUser will handle session errors
+    const hasCode = searchParams.get("code");
+    if (modeParam === "reset-password" && !hasCode) {
+      console.log("🔑 LOGIN PAGE - Password reset mode detected (no code), showing form");
+      // Show the reset password form
       setMode("reset-password");
     }
-  }, [searchParams, supabase.auth]);
+  }, [searchParams]);
 
   const validatePassword = (pwd: string): string | null => {
     if (pwd.length < 6) {
@@ -563,28 +607,25 @@ export default function LoginPage() {
       return;
     }
 
-    // Check session before attempting update
-    console.log("🔍 PASSWORD UPDATE - Checking for valid session...");
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    if (!session) {
-      console.error("❌ PASSWORD UPDATE - No session found! Link may be expired or already used.");
-      setError("This password reset link has expired or was already used. Please request a new one.");
-      setIsLoading(false);
-      return;
-    }
-    
-    console.log("✅ PASSWORD UPDATE - Session found, attempting to update password");
+    // Don't call getSession() - it can invalidate the recovery session
+    // Just attempt the password update directly
+    console.log("🔄 PASSWORD UPDATE - Attempting to update password directly...");
 
     try {
-      const { error: updateError } = await supabase.auth.updateUser({
+      const { error: updateError, data } = await supabase.auth.updateUser({
         password: newPassword,
       });
 
+      console.log("📊 PASSWORD UPDATE - Response:", { 
+        hasError: !!updateError, 
+        errorMessage: updateError?.message,
+        hasUser: !!data?.user 
+      });
+
       if (updateError) {
-        console.error("❌ PASSWORD UPDATE - Update failed:", updateError.message);
+        console.error("❌ PASSWORD UPDATE - Update failed:", updateError.message, updateError);
         // Provide user-friendly error messages
-        if (updateError.message.includes("session") || updateError.message.includes("Auth")) {
+        if (updateError.message.includes("session") || updateError.message.includes("Auth") || updateError.status === 403) {
           setError("This password reset link has expired or was already used. Please request a new one.");
         } else {
           setError(updateError.message);
