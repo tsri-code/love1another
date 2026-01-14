@@ -10,8 +10,9 @@ import {
   CheckCircleIcon,
   AlertCircleIcon,
 } from "@/components/ui/alert";
+import { PasswordInput } from "@/components/PasswordInput";
 
-type AuthMode = "login" | "signup" | "verify-otp" | "forgot-password";
+type AuthMode = "login" | "signup" | "verify-otp" | "forgot-password" | "reset-password";
 
 export default function LoginPage() {
   const [mode, setMode] = useState<AuthMode>("login");
@@ -38,6 +39,9 @@ export default function LoginPage() {
   } | null>(null);
   const [rememberMe, setRememberMe] = useState(true);
   const [resetEmail, setResetEmail] = useState(""); // Separate state for password reset
+  const [isRedirecting, setIsRedirecting] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -45,11 +49,17 @@ export default function LoginPage() {
   const { generateKeys, unlock, cryptoSupported, missingFeatures } =
     useCrypto();
 
-  // Check for error in URL params (from auth callback)
+  // Check for error or mode in URL params (from auth callback)
   useEffect(() => {
     const errorParam = searchParams.get("error");
     if (errorParam) {
       setError("Authentication failed. Please try again.");
+    }
+    
+    // Check if this is a password reset flow
+    const modeParam = searchParams.get("mode");
+    if (modeParam === "reset-password") {
+      setMode("reset-password");
     }
   }, [searchParams]);
 
@@ -289,7 +299,14 @@ export default function LoginPage() {
       });
 
       if (authError) {
-        setError(authError.message);
+        // Provide more helpful error messages
+        let errorMessage = authError.message;
+        if (authError.message.includes("already registered")) {
+          errorMessage = "This email is already registered. Try logging in instead.";
+        } else if (authError.message.includes("email")) {
+          errorMessage = "Error sending confirmation email. Please try again or contact support.";
+        }
+        setError(errorMessage);
         setIsLoading(false);
         return;
       }
@@ -311,8 +328,10 @@ export default function LoginPage() {
           }
 
           await unlock(userKeys, password, data.user.id);
-          router.push("/");
-          router.refresh();
+          
+          // Wait for session to be fully established before navigating
+          await new Promise(resolve => setTimeout(resolve, 300));
+          window.location.href = "/";
         } else {
           // Email confirmation required - store keys in state for later
           setPendingEmail(email.trim());
@@ -404,9 +423,16 @@ export default function LoginPage() {
           console.error("Error creating default profile:", profileError);
         }
 
-        setSuccess("Email verified! Redirecting...");
-        router.push("/");
-        router.refresh();
+        // Show redirecting overlay
+        setIsRedirecting(true);
+        setIsLoading(true);
+        
+        // Wait for session to be fully established before navigating
+        // This prevents race conditions with AuthGuard
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Force a full page reload to ensure AuthGuard picks up the new session
+        window.location.href = "/";
       }
     } catch (err) {
       console.error("OTP verification error:", err);
@@ -453,7 +479,7 @@ export default function LoginPage() {
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(
         resetEmail.trim(),
         {
-          redirectTo: `${window.location.origin}/auth/callback?next=/settings`,
+          redirectTo: `${window.location.origin}/auth/callback?type=recovery`,
         }
       );
 
@@ -466,6 +492,50 @@ export default function LoginPage() {
       console.error("Password reset error:", err);
       setError("Failed to send reset email. Please try again.");
     } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+    setIsLoading(true);
+
+    // Validate passwords match
+    if (newPassword !== confirmNewPassword) {
+      setError("Passwords do not match");
+      setIsLoading(false);
+      return;
+    }
+
+    // Validate password strength
+    const passwordError = validatePassword(newPassword);
+    if (passwordError) {
+      setError(passwordError);
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (updateError) {
+        setError(updateError.message);
+        setIsLoading(false);
+        return;
+      }
+
+      setSuccess("Password updated successfully! Redirecting...");
+      
+      // Redirect to home after successful password update
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      window.location.href = "/";
+    } catch (err) {
+      console.error("Password update error:", err);
+      setError("Failed to update password. Please try again.");
       setIsLoading(false);
     }
   };
@@ -498,6 +568,8 @@ export default function LoginPage() {
     setError("");
     setSuccess("");
     setResetEmail(""); // Clear reset email when switching modes
+    setNewPassword("");
+    setConfirmNewPassword("");
   };
 
   const switchMode = (newMode: AuthMode) => {
@@ -527,6 +599,48 @@ export default function LoginPage() {
     ];
     return colors[Math.floor(Math.random() * colors.length)];
   };
+
+  // Show redirecting overlay when logging in after OTP verification
+  if (isRedirecting) {
+    return (
+      <div className="lock-screen">
+        <div
+          className="lock-card card card-elevated animate-fade-in"
+          style={{ maxWidth: "400px", width: "100%", textAlign: "center" }}
+        >
+          <div
+            className="mx-auto"
+            style={{
+              width: "80px",
+              height: "80px",
+              marginBottom: "var(--space-lg)",
+              borderRadius: "20px",
+              overflow: "hidden",
+              boxShadow: "var(--shadow-lg)",
+            }}
+          >
+            <img
+              src="/favicon.jpeg"
+              alt="Love1Another"
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
+          </div>
+          <div style={{ marginBottom: "var(--space-md)" }}>
+            <LoadingSpinner />
+          </div>
+          <h2
+            className="font-serif font-semibold text-[var(--text-primary)]"
+            style={{ fontSize: "var(--text-xl)", marginBottom: "var(--space-sm)" }}
+          >
+            Welcome!
+          </h2>
+          <p className="text-[var(--text-secondary)]" style={{ fontSize: "var(--text-sm)" }}>
+            Email verified. Logging you in...
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="lock-screen">
@@ -575,6 +689,7 @@ export default function LoginPage() {
           {mode === "signup" && "Create your account"}
           {mode === "verify-otp" && "Verify your email"}
           {mode === "forgot-password" && "Reset your password"}
+          {mode === "reset-password" && "Create new password"}
         </p>
 
         {/* Mode Toggle (only for login/signup) */}
@@ -668,9 +783,8 @@ export default function LoginPage() {
               <label className="label" htmlFor="password">
                 Password
               </label>
-              <input
+              <PasswordInput
                 id="password"
-                type="password"
                 className={`input ${error ? "input-error" : ""}`}
                 placeholder="Enter your password"
                 value={password}
@@ -878,9 +992,8 @@ export default function LoginPage() {
               <label className="label" htmlFor="newPassword">
                 Password
               </label>
-              <input
+              <PasswordInput
                 id="newPassword"
-                type="password"
                 className="input"
                 placeholder="Create a password"
                 value={password}
@@ -897,9 +1010,8 @@ export default function LoginPage() {
               <label className="label" htmlFor="confirmPassword">
                 Confirm Password
               </label>
-              <input
+              <PasswordInput
                 id="confirmPassword"
-                type="password"
                 className="input"
                 placeholder="Confirm your password"
                 value={confirmPassword}
@@ -1131,6 +1243,100 @@ export default function LoginPage() {
               className="btn btn-secondary btn-full"
             >
               Back to login
+            </button>
+          </form>
+        )}
+
+        {/* Reset Password Form (after clicking email link) */}
+        {mode === "reset-password" && (
+          <form onSubmit={handleUpdatePassword} className="animate-fade-in">
+            <p
+              className="text-[var(--text-secondary)]"
+              style={{
+                marginBottom: "var(--space-lg)",
+                textAlign: "center",
+                fontSize: "var(--text-sm)",
+              }}
+            >
+              Enter your new password below.
+            </p>
+
+            <div className="form-group">
+              <label className="label" htmlFor="newPassword">
+                New Password
+              </label>
+              <PasswordInput
+                id="newPassword"
+                placeholder="Enter new password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                autoComplete="new-password"
+                required
+              />
+              <p
+                className="text-[var(--text-muted)]"
+                style={{
+                  fontSize: "var(--text-xs)",
+                  marginTop: "var(--space-xs)",
+                }}
+              >
+                Min 6 chars, uppercase, lowercase, number, symbol
+              </p>
+            </div>
+
+            <div className="form-group">
+              <label className="label" htmlFor="confirmNewPassword">
+                Confirm New Password
+              </label>
+              <PasswordInput
+                id="confirmNewPassword"
+                placeholder="Confirm new password"
+                value={confirmNewPassword}
+                onChange={(e) => setConfirmNewPassword(e.target.value)}
+                autoComplete="new-password"
+                required
+              />
+            </div>
+
+            {error && (
+              <div
+                className="animate-shake"
+                style={{ marginBottom: "var(--space-md)" }}
+              >
+                <Alert variant="destructive" icon={<AlertCircleIcon />}>
+                  <AlertTitle>{error}</AlertTitle>
+                </Alert>
+              </div>
+            )}
+
+            {success && (
+              <div
+                className="animate-fade-in"
+                style={{ marginBottom: "var(--space-md)" }}
+              >
+                <Alert variant="success" icon={<CheckCircleIcon />}>
+                  <AlertTitle>{success}</AlertTitle>
+                </Alert>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              className="btn btn-primary btn-full btn-lg"
+              disabled={isLoading || !newPassword || !confirmNewPassword}
+              style={{ background: "#3b82f6" }}
+            >
+              {isLoading ? (
+                <span
+                  className="flex items-center justify-center"
+                  style={{ gap: "var(--space-sm)" }}
+                >
+                  <LoadingSpinner />
+                  Updating...
+                </span>
+              ) : (
+                "Update Password"
+              )}
             </button>
           </form>
         )}

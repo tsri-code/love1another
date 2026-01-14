@@ -46,7 +46,7 @@ export async function middleware(request: NextRequest) {
       "Content-Security-Policy",
       [
         "default-src 'self'",
-        "script-src 'self' 'unsafe-eval' 'unsafe-inline'", // Next.js requires these
+        "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://va.vercel-scripts.com", // Next.js requires these + Vercel Analytics
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
         "font-src 'self' https://fonts.gstatic.com",
         `img-src 'self' data: blob: ${supabaseHost ? `https://${supabaseHost}` : ""}`,

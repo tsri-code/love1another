@@ -12,7 +12,7 @@ import { NextResponse } from 'next/server';
  * 1. User clicks link in email
  * 2. Supabase redirects to this callback with auth code
  * 3. We exchange the code for a session
- * 4. User is redirected to the app
+ * 4. User is redirected to the app (or password reset form if recovery)
  */
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
@@ -22,6 +22,10 @@ export async function GET(request: Request) {
   
   // Get the redirect destination (default to home)
   const next = searchParams.get('next') ?? '/';
+  
+  // Check if this is a password recovery flow
+  const type = searchParams.get('type');
+  const isRecovery = type === 'recovery';
   
   // Check for error
   const error = searchParams.get('error');
@@ -43,17 +47,18 @@ export async function GET(request: Request) {
       return NextResponse.redirect(`${origin}/login?error=auth_callback_error`);
     }
 
-    // Successful auth - redirect to the app
+    // Determine redirect destination
     const forwardedHost = request.headers.get('x-forwarded-host');
     const isLocalEnv = process.env.NODE_ENV === 'development';
+    const baseUrl = isLocalEnv ? origin : (forwardedHost ? `https://${forwardedHost}` : origin);
     
-    if (isLocalEnv) {
-      return NextResponse.redirect(`${origin}${next}`);
-    } else if (forwardedHost) {
-      return NextResponse.redirect(`https://${forwardedHost}${next}`);
-    } else {
-      return NextResponse.redirect(`${origin}${next}`);
+    // If this is a password recovery, redirect to the reset password form
+    if (isRecovery) {
+      return NextResponse.redirect(`${baseUrl}/login?mode=reset-password`);
     }
+
+    // Successful auth - redirect to the app
+    return NextResponse.redirect(`${baseUrl}${next}`);
   }
 
   // If there's no code or an error occurred, redirect to login with error

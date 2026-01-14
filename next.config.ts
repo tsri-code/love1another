@@ -54,8 +54,8 @@ const nextConfig: NextConfig = {
             value: [
               // Default to self
               "default-src 'self'",
-              // Scripts: self + inline for Next.js hydration
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+              // Scripts: self + inline for Next.js hydration + Vercel Analytics
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://va.vercel-scripts.com",
               // Styles: self + inline for styled-jsx and CSS-in-JS
               "style-src 'self' 'unsafe-inline'",
               // Images: self + data URIs + Supabase storage

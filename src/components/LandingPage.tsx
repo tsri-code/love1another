@@ -2,6 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { MobileMenu } from "./MobileMenu";
+import { PWAInstructions } from "./PWAInstructions";
 
 export function LandingPage() {
   const router = useRouter();
@@ -76,11 +78,12 @@ export function LandingPage() {
               </button>
               <button
                 onClick={() => router.push("/login")}
-                className="btn btn-primary"
+                className="btn btn-primary hide-mobile"
                 style={{ height: "44px" }}
               >
                 Sign In
               </button>
+              <MobileMenu />
             </div>
           </nav>
 
@@ -329,6 +332,13 @@ export function LandingPage() {
               </p>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* PWA Instructions Section */}
+      <section className="landing-section">
+        <div style={{ maxWidth: "960px", margin: "0 auto" }}>
+          <PWAInstructions />
         </div>
       </section>
 

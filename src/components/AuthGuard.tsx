@@ -146,13 +146,27 @@ export function AuthGuard({ children }: AuthGuardProps) {
         sessionStorage.removeItem("sessionActive");
       }
 
-      await supabase.auth.signOut();
+      // Sign out - use local scope to avoid 403 errors
+      // The 403 error on global scope is harmless but we'll avoid it
+      try {
+        await supabase.auth.signOut({ scope: "local" });
+      } catch (error: any) {
+        // If local scope fails or isn't supported, try without scope
+        // This is a non-critical error - user is already logged out locally
+        if (error?.status !== 403) {
+          try {
+            await supabase.auth.signOut();
+          } catch (e) {
+            // Silently ignore - logout still works
+          }
+        }
+      }
     } catch (error) {
       console.error("Logout error:", error);
     }
     setUser(null);
     setSupabaseUser(null);
-    router.push("/login");
+    router.push("/");
   };
 
   const refreshUser = async () => {
@@ -263,7 +277,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
           pathname !== "/how-to-use" &&
           !pathname.startsWith("/donate")
         ) {
-          router.push("/login");
+          router.push("/");
         }
       } else if (event === "TOKEN_REFRESHED" && session) {
         // Session was refreshed, update user data
@@ -339,9 +353,13 @@ export function AuthGuard({ children }: AuthGuardProps) {
       <AuthContext.Provider
         value={{ user, supabaseUser, isLoading, logout, refreshUser }}
       >
-        <NotificationProvider userId={user?.id}>
-          {children}
-        </NotificationProvider>
+        {user ? (
+          <NotificationProvider userId={user.id}>
+            {children}
+          </NotificationProvider>
+        ) : (
+          children
+        )}
       </AuthContext.Provider>
     );
   }

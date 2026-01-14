@@ -14,6 +14,8 @@ import {
   AlertCircleIcon,
 } from "@/components/ui/alert";
 import { useNotifications } from "@/lib/use-notifications";
+import { PWAInstructions } from "@/components/PWAInstructions";
+import { PasswordInput } from "@/components/PasswordInput";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -662,8 +664,7 @@ export default function SettingsPage() {
                 <div className="animate-fade-in">
                   <div className="form-group">
                     <label className="label">Current Password</label>
-                    <input
-                      type="password"
+                    <PasswordInput
                       className="input"
                       placeholder="Enter current password"
                       value={currentPassword}
@@ -673,8 +674,7 @@ export default function SettingsPage() {
 
                   <div className="form-group">
                     <label className="label">New Password</label>
-                    <input
-                      type="password"
+                    <PasswordInput
                       className="input"
                       placeholder="Enter new password"
                       value={newPassword}
@@ -688,8 +688,7 @@ export default function SettingsPage() {
 
                   <div className="form-group">
                     <label className="label">Confirm New Password</label>
-                    <input
-                      type="password"
+                    <PasswordInput
                       className="input"
                       placeholder="Confirm new password"
                       value={confirmPassword}
@@ -776,7 +775,7 @@ export default function SettingsPage() {
             </div>
 
             {/* Notification Settings */}
-            <div className="card">
+            <div className="card" style={{ marginBottom: "var(--space-lg)" }}>
               <h2
                 className="font-serif font-semibold"
                 style={{
@@ -948,6 +947,32 @@ export default function SettingsPage() {
                 counts will still appear in the tab title even if sounds are
                 disabled.
               </p>
+            </div>
+
+            {/* PWA Instructions */}
+            <div className="card" style={{ marginBottom: "var(--space-lg)" }}>
+              <h2
+                className="font-serif font-semibold text-[var(--text-primary)]"
+                style={{
+                  fontSize: "var(--text-lg)",
+                  marginBottom: "var(--space-md)",
+                }}
+              >
+                Add to Home Screen
+              </h2>
+              <p
+                className="text-[var(--text-secondary)]"
+                style={{
+                  fontSize: "var(--text-sm)",
+                  marginBottom: "var(--space-lg)",
+                  lineHeight: "var(--leading-relaxed)",
+                }}
+              >
+                Add Love1Another to your device for quick access. On mobile, you can
+                save it as a web app that works just like a native app. On desktop,
+                bookmark the page for easy access.
+              </p>
+              <PWAInstructions />
             </div>
 
             {/* Danger Zone */}
