@@ -177,15 +177,22 @@ export function AuthGuard({ children }: AuthGuardProps) {
     await checkAuth();
   };
 
+  // Check if current path is a public page that doesn't require auth
+  const isPublicPage = useCallback(() => {
+    return (
+      pathname === "/" ||
+      pathname === "/login" ||
+      pathname === "/how-to-use" ||
+      pathname === "/privacy" ||
+      pathname === "/terms" ||
+      pathname.startsWith("/auth/") ||
+      pathname.startsWith("/donate") ||
+      pathname.startsWith("/l/")
+    );
+  }, [pathname]);
+
   // Listen for auth state changes - this is the ONLY place we check auth
   useEffect(() => {
-    const isPasswordRecoveryFlow = () => {
-      if (pathname !== "/login") return false;
-      if (typeof window === "undefined") return false;
-      const params = new URLSearchParams(window.location.search);
-      return params.get("mode") === "reset-password" || params.has("code");
-    };
-
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -193,25 +200,15 @@ export function AuthGuard({ children }: AuthGuardProps) {
         // This fires when Supabase has loaded the initial session from storage
         const rememberMe = localStorage.getItem("rememberMe");
         const sessionActive = sessionStorage.getItem("sessionActive");
-        const isRecoveryFlow = isPasswordRecoveryFlow();
 
         // Handle "Remember Me" logic
-        if (!rememberMe && !sessionActive && session && !isRecoveryFlow) {
+        if (!rememberMe && !sessionActive && session) {
           // User didn't want to be remembered, and this is a new browser session
           await supabase.auth.signOut();
           setUser(null);
           setSupabaseUser(null);
           setIsLoading(false);
-          // Don't redirect from public pages
-          if (
-            pathname !== "/" &&
-            pathname !== "/login" &&
-            pathname !== "/how-to-use" &&
-            pathname !== "/privacy" &&
-            pathname !== "/terms" &&
-            !pathname.startsWith("/auth/") &&
-            !pathname.startsWith("/donate")
-          ) {
+          if (!isPublicPage()) {
             router.push("/login");
           }
           return;
@@ -221,11 +218,6 @@ export function AuthGuard({ children }: AuthGuardProps) {
           // Session exists, set user data
           const supabaseUserData = session.user;
           setSupabaseUser(supabaseUserData);
-
-          if (isRecoveryFlow) {
-            setIsLoading(false);
-            return;
-          }
 
           const metadata = supabaseUserData.user_metadata || {};
           const fullName =
@@ -247,29 +239,14 @@ export function AuthGuard({ children }: AuthGuardProps) {
         } else {
           setUser(null);
           setSupabaseUser(null);
-          // Don't redirect from public pages
-          if (
-            pathname !== "/" &&
-            pathname !== "/login" &&
-            pathname !== "/how-to-use" &&
-            pathname !== "/privacy" &&
-            pathname !== "/terms" &&
-            !pathname.startsWith("/auth/") &&
-            !pathname.startsWith("/donate")
-          ) {
+          if (!isPublicPage()) {
             router.push("/login");
           }
         }
         setIsLoading(false);
       } else if (event === "SIGNED_IN" && session) {
-        const isRecoveryFlow = isPasswordRecoveryFlow();
         const supabaseUserData = session.user;
         setSupabaseUser(supabaseUserData);
-
-        if (isRecoveryFlow) {
-          setIsLoading(false);
-          return;
-        }
 
         const metadata = supabaseUserData.user_metadata || {};
         const fullName =
@@ -290,41 +267,17 @@ export function AuthGuard({ children }: AuthGuardProps) {
         });
         setIsLoading(false);
       } else if (event === "PASSWORD_RECOVERY" && session) {
-        console.log("🔐 AUTH GUARD - PASSWORD_RECOVERY event detected");
-        // Password recovery - maintain session so updateUser() works
-        // But redirect to reset password form
-        const supabaseUserData = session.user;
-        setSupabaseUser(supabaseUserData);
-        console.log(
-          "✅ AUTH GUARD - Session user set for password recovery:",
-          supabaseUserData.email
-        );
-        // Don't set user profile - they shouldn't access the app until password is reset
+        // OTP-based recovery: user is on login page entering code
+        // Set session but don't set user (they haven't completed reset yet)
+        // The login page handles the updateUser() and signOut()
+        setSupabaseUser(session.user);
         setIsLoading(false);
-
-        // Only redirect if not already on reset password page
-        if (
-          !pathname.includes("mode=reset-password") &&
-          pathname !== "/login"
-        ) {
-          console.log("🔀 AUTH GUARD - Redirecting to password reset form");
-          router.push("/login?mode=reset-password");
-        } else {
-          console.log(
-            "✅ AUTH GUARD - Already on password reset page, no redirect needed"
-          );
-        }
+        // Stay on login page - don't redirect anywhere
       } else if (event === "SIGNED_OUT") {
         setUser(null);
         setSupabaseUser(null);
         setIsLoading(false);
-        // Don't redirect from public pages
-        if (
-          pathname !== "/" &&
-          pathname !== "/login" &&
-          pathname !== "/how-to-use" &&
-          !pathname.startsWith("/donate")
-        ) {
+        if (!isPublicPage()) {
           router.push("/");
         }
       } else if (event === "TOKEN_REFRESHED" && session) {
@@ -355,7 +308,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
     return () => {
       subscription.unsubscribe();
     };
-  }, [pathname, router, checkAuth, supabase.auth]);
+  }, [pathname, router, checkAuth, supabase.auth, isPublicPage]);
 
   // Show loading state
   if (isLoading) {
@@ -385,18 +338,8 @@ export function AuthGuard({ children }: AuthGuardProps) {
     );
   }
 
-  // Public pages that don't require auth (landing, login, auth callback, how to use, donate, legal)
-  const isPublicPage =
-    pathname === "/" ||
-    pathname === "/login" ||
-    pathname === "/how-to-use" ||
-    pathname === "/privacy" ||
-    pathname === "/terms" ||
-    pathname.startsWith("/auth/") ||
-    pathname.startsWith("/donate");
-
   // If on public page or authenticated, show children
-  if (isPublicPage || user) {
+  if (isPublicPage() || user) {
     return (
       <AuthContext.Provider
         value={{ user, supabaseUser, isLoading, logout, refreshUser }}

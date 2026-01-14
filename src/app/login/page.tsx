@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import { useCrypto } from "@/lib/use-crypto";
@@ -38,14 +38,12 @@ export default function LoginPage() {
     keySalt: string;
   } | null>(null);
   const [rememberMe, setRememberMe] = useState(true);
-  const [resetEmail, setResetEmail] = useState(""); // Separate state for password reset
+  const [resetEmail, setResetEmail] = useState(""); // Email for password reset
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
-  const hasExchangedCodeRef = useRef(false);
-  const [useRecoveryCode, setUseRecoveryCode] = useState(false);
-  const [recoveryEmail, setRecoveryEmail] = useState("");
-  const [recoveryCode, setRecoveryCode] = useState("");
+  const [resetCode, setResetCode] = useState(""); // OTP code for password reset
+  const [resendCooldown, setResendCooldown] = useState(0); // Cooldown timer for resend
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -53,117 +51,39 @@ export default function LoginPage() {
   const { generateKeys, unlock, cryptoSupported, missingFeatures } =
     useCrypto();
 
-  // Listen for PASSWORD_RECOVERY event - this is the recommended way to handle password reset
+  // Resend cooldown timer
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("🔔 LOGIN PAGE - Auth state change:", event);
-
-      if (event === "PASSWORD_RECOVERY") {
-        console.log("🔐 LOGIN PAGE - PASSWORD_RECOVERY event received!");
-        if (session) {
-          console.log("✅ LOGIN PAGE - Recovery session active for:", session.user.email);
-        }
-        setMode("reset-password");
-        // Clear URL params but keep mode
-        window.history.replaceState({}, "", "/login?mode=reset-password");
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [supabase.auth]);
-
-  // Handle code exchange for password recovery (client-side)
-  useEffect(() => {
-    const code = searchParams.get("code");
-    const modeParam = searchParams.get("mode");
-
-    if (code && modeParam === "reset-password") {
-      if (hasExchangedCodeRef.current) {
-        console.log("ℹ️ LOGIN PAGE - Code exchange already attempted, skipping");
-        return;
-      }
-      hasExchangedCodeRef.current = true;
-
-      console.log("🔄 LOGIN PAGE - Password recovery code detected, exchanging...");
-
-      // Mark session as active to prevent AuthGuard auto-signout
-      if (typeof window !== "undefined") {
-        sessionStorage.setItem("sessionActive", "true");
-      }
-
-      const exchangeCode = async () => {
-        try {
-          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-
-          if (error) {
-            console.error("❌ LOGIN PAGE - Code exchange failed:", error.message);
-            setError("This password reset link has expired or was already used. Please request a new one.");
-            setMode("forgot-password");
-            window.history.replaceState({}, "", "/login");
-            return;
-          }
-
-          if (data.session) {
-            console.log("✅ LOGIN PAGE - Code exchange successful, session established");
-            console.log("👤 LOGIN PAGE - User:", data.session.user.email);
-            // Keep showing the reset password form
-            setMode("reset-password");
-            // Clear the code from URL
-            window.history.replaceState({}, "", "/login?mode=reset-password");
-          }
-        } catch (err) {
-          console.error("❌ LOGIN PAGE - Code exchange error:", err);
-          setError("Failed to process password reset link. Please request a new one.");
-          setMode("forgot-password");
-          window.history.replaceState({}, "", "/login");
-        }
-      };
-
-      exchangeCode();
+    if (resendCooldown > 0) {
+      const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
+      return () => clearTimeout(timer);
     }
-  }, [searchParams, supabase.auth]);
+  }, [resendCooldown]);
 
-  // Check for error, success, or mode in URL params (from auth callback or password reset)
+  // Check for error, success, or mode in URL params
   useEffect(() => {
-    console.log("📄 LOGIN PAGE - Loaded with params:", {
-      error: searchParams.get("error"),
-      success: searchParams.get("success"),
-      mode: searchParams.get("mode"),
-      hasCode: !!searchParams.get("code")
-    });
-
     const errorParam = searchParams.get("error");
     if (errorParam) {
-      console.log("❌ LOGIN PAGE - Error param detected:", errorParam);
-      if (errorParam === "link_expired") {
-        setError("This password reset link has expired or was already used. Please request a new one.");
-        setMode("forgot-password");
-      } else {
-        setError("Authentication failed. Please try again.");
-      }
-      // Clear the error from URL
+      setError("Authentication failed. Please try again.");
       window.history.replaceState({}, "", "/login");
     }
 
     // Check for success message (e.g., after password reset)
     const successParam = searchParams.get("success");
     if (successParam === "password_updated") {
-      console.log("✅ LOGIN PAGE - Password updated successfully message shown");
       setSuccess("Password updated successfully! Please sign in with your new password.");
-      // Clear the URL parameter after showing the message
       window.history.replaceState({}, "", "/login");
     }
 
-    // Check if this is a password reset flow (without code - code handled separately)
+    // Check if this is a password reset flow
     const modeParam = searchParams.get("mode");
-    const hasCode = searchParams.get("code");
-    if (modeParam === "reset-password" && !hasCode) {
-      console.log("🔑 LOGIN PAGE - Password reset mode detected (no code), showing form");
-      if (typeof window !== "undefined") {
-        sessionStorage.setItem("sessionActive", "true");
-      }
-      // Show the reset password form
+    if (modeParam === "reset-password") {
       setMode("reset-password");
+      // Pre-fill email if provided
+      const emailParam = searchParams.get("email");
+      if (emailParam) {
+        setResetEmail(decodeURIComponent(emailParam));
+      }
+      window.history.replaceState({}, "", "/login?mode=reset-password");
     }
   }, [searchParams]);
 
@@ -571,6 +491,7 @@ export default function LoginPage() {
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setSuccess("");
     setIsLoading(true);
 
     if (!resetEmail.trim() || !resetEmail.includes("@")) {
@@ -580,21 +501,59 @@ export default function LoginPage() {
     }
 
     try {
+      // Send reset email without redirect - user will enter the OTP code manually
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(
-        resetEmail.trim(),
-        {
-          redirectTo: `${window.location.origin}/auth/callback?type=recovery`,
-        }
+        resetEmail.trim()
       );
 
       if (resetError) {
-        setError(resetError.message);
-      } else {
-        setSuccess("Password reset email sent! Check your inbox.");
+        // Don't reveal if email exists for security
+        console.error("Password reset error:", resetError);
       }
+
+      // Always show success to prevent email enumeration
+      setSuccess("If an account exists with this email, you'll receive a reset code shortly.");
+      setResendCooldown(60); // 60 second cooldown
+
+      // Auto-transition to reset-password mode after brief delay
+      setTimeout(() => {
+        setMode("reset-password");
+        setSuccess("");
+      }, 2000);
     } catch (err) {
       console.error("Password reset error:", err);
       setError("Failed to send reset email. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResendResetCode = async () => {
+    if (resendCooldown > 0) return;
+
+    setError("");
+    setIsLoading(true);
+
+    try {
+      const emailToUse = resetEmail.trim();
+      if (!emailToUse || !emailToUse.includes("@")) {
+        setError("Please enter your email address first");
+        setIsLoading(false);
+        return;
+      }
+
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(emailToUse);
+
+      if (resetError) {
+        console.error("Resend reset code error:", resetError);
+      }
+
+      // Always show success to prevent email enumeration
+      setSuccess("If an account exists with this email, a new code has been sent.");
+      setResendCooldown(60);
+    } catch (err) {
+      console.error("Resend reset code error:", err);
+      setError("Failed to resend code. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -606,11 +565,22 @@ export default function LoginPage() {
     setSuccess("");
     setIsLoading(true);
 
-    console.log("🔐 PASSWORD UPDATE - Starting password update");
+    // Validate email
+    if (!resetEmail.trim() || !resetEmail.includes("@")) {
+      setError("Please enter your email address");
+      setIsLoading(false);
+      return;
+    }
+
+    // Validate reset code
+    if (!resetCode.trim()) {
+      setError("Please enter the reset code from your email");
+      setIsLoading(false);
+      return;
+    }
 
     // Validate passwords match
     if (newPassword !== confirmNewPassword) {
-      console.log("❌ PASSWORD UPDATE - Passwords don't match");
       setError("Passwords do not match");
       setIsLoading(false);
       return;
@@ -619,68 +589,46 @@ export default function LoginPage() {
     // Validate password strength
     const passwordError = validatePassword(newPassword);
     if (passwordError) {
-      console.log("❌ PASSWORD UPDATE - Validation failed:", passwordError);
       setError(passwordError);
       setIsLoading(false);
       return;
     }
 
-    // Don't call getSession() - it can invalidate the recovery session
-    // Just attempt the password update directly
-    console.log("🔄 PASSWORD UPDATE - Attempting to update password directly...");
-
     try {
-      if (useRecoveryCode || recoveryCode.trim()) {
-        if (!recoveryEmail.trim()) {
-          setError("Please enter your email to use the recovery code.");
-          setIsLoading(false);
-          return;
-        }
-        if (!recoveryCode.trim()) {
-          setError("Please enter the recovery code from your email.");
-          setIsLoading(false);
-          return;
-        }
+      // Step 1: Verify the OTP code - this establishes a recovery session
+      const { error: verifyError, data: verifyData } = await supabase.auth.verifyOtp({
+        email: resetEmail.trim(),
+        token: resetCode.trim(),
+        type: "recovery",
+      });
 
-        console.log("🔑 PASSWORD UPDATE - Verifying recovery code...");
-        const { error: verifyError, data: verifyData } =
-          await supabase.auth.verifyOtp({
-            email: recoveryEmail.trim(),
-            token: recoveryCode.trim(),
-            type: "recovery",
-          });
-
-        if (verifyError) {
-          console.error("❌ PASSWORD UPDATE - Recovery code invalid:", verifyError);
-          setError(
-            "Recovery code is invalid or expired. Please request a new reset email."
-          );
-          setIsLoading(false);
-          return;
+      if (verifyError) {
+        // Provide user-friendly error messages
+        if (verifyError.message.includes("expired") || verifyError.message.includes("invalid")) {
+          setError("Reset code is invalid or expired. Please request a new one.");
+        } else if (verifyError.message.includes("rate") || verifyError.message.includes("limit")) {
+          setError("Too many attempts. Please wait a few minutes and try again.");
+        } else {
+          setError(verifyError.message);
         }
-
-        if (verifyData?.session) {
-          console.log(
-            "✅ PASSWORD UPDATE - Recovery code verified, session established"
-          );
-        }
+        setIsLoading(false);
+        return;
       }
 
-      const { error: updateError, data } = await supabase.auth.updateUser({
+      if (!verifyData?.session) {
+        setError("Failed to verify reset code. Please try again.");
+        setIsLoading(false);
+        return;
+      }
+
+      // Step 2: Update the password (now we have a valid session)
+      const { error: updateError } = await supabase.auth.updateUser({
         password: newPassword,
       });
 
-      console.log("📊 PASSWORD UPDATE - Response:", {
-        hasError: !!updateError,
-        errorMessage: updateError?.message,
-        hasUser: !!data?.user
-      });
-
       if (updateError) {
-        console.error("❌ PASSWORD UPDATE - Update failed:", updateError.message, updateError);
-        // Provide user-friendly error messages
-        if (updateError.message.includes("session") || updateError.message.includes("Auth") || updateError.status === 403) {
-          setError("This password reset link has expired or was already used. Please request a new one.");
+        if (updateError.message.includes("same")) {
+          setError("New password must be different from your previous password.");
         } else {
           setError(updateError.message);
         }
@@ -688,26 +636,16 @@ export default function LoginPage() {
         return;
       }
 
-      console.log("✅ PASSWORD UPDATE - Password updated successfully!");
-
-      // IMPORTANT: Sign out the user after password reset for security
-      // They must log in again with their new password
-      console.log("🚪 PASSWORD UPDATE - Signing out user for security");
+      // Step 3: Sign out for security - user must log in with new password
       try {
         await supabase.auth.signOut({ scope: "local" });
-      } catch (signoutError) {
-        console.warn("⚠️ PASSWORD UPDATE - Signout error (non-critical):", signoutError);
+      } catch {
+        // Non-critical error
       }
 
-      if (typeof window !== "undefined") {
-        sessionStorage.removeItem("sessionActive");
-      }
+      setSuccess("Password updated successfully! Redirecting to login...");
 
-      setSuccess("Password updated! Redirecting to login...");
-
-      console.log("🔀 PASSWORD UPDATE - Redirecting to login page");
-      // Full page redirect to login with success message
-      // This ensures clean state after password reset
+      // Redirect to login page with success message
       await new Promise(resolve => setTimeout(resolve, 1500));
       window.location.href = "/login?success=password_updated";
     } catch (err) {
@@ -744,12 +682,10 @@ export default function LoginPage() {
     setOtpCode("");
     setError("");
     setSuccess("");
-    setResetEmail(""); // Clear reset email when switching modes
+    setResetEmail("");
     setNewPassword("");
     setConfirmNewPassword("");
-    setUseRecoveryCode(false);
-    setRecoveryEmail("");
-    setRecoveryCode("");
+    setResetCode("");
   };
 
   const switchMode = (newMode: AuthMode) => {
@@ -1353,7 +1289,7 @@ export default function LoginPage() {
           </form>
         )}
 
-        {/* Forgot Password Form */}
+        {/* Forgot Password Form - Request Reset Code */}
         {mode === "forgot-password" && (
           <form onSubmit={handleForgotPassword} className="animate-fade-in">
             <p
@@ -1364,7 +1300,7 @@ export default function LoginPage() {
                 fontSize: "var(--text-sm)",
               }}
             >
-              Enter your email and we&apos;ll send you a reset link.
+              Enter your email and we&apos;ll send you a reset code.
             </p>
 
             <div className="form-group">
@@ -1379,10 +1315,7 @@ export default function LoginPage() {
                 placeholder="Enter your email address"
                 value={resetEmail}
                 onChange={(e) => setResetEmail(e.target.value)}
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                spellCheck="false"
+                autoComplete="email"
                 required
               />
             </div>
@@ -1394,6 +1327,17 @@ export default function LoginPage() {
               >
                 <Alert variant="destructive" icon={<AlertCircleIcon />}>
                   <AlertTitle>{error}</AlertTitle>
+                </Alert>
+              </div>
+            )}
+
+            {success && (
+              <div
+                className="animate-fade-in"
+                style={{ marginBottom: "var(--space-md)" }}
+              >
+                <Alert variant="success" icon={<CheckCircleIcon />}>
+                  <AlertTitle>{success}</AlertTitle>
                 </Alert>
               </div>
             )}
@@ -1413,21 +1357,56 @@ export default function LoginPage() {
                   Sending...
                 </span>
               ) : (
-                "Send Reset Link"
+                "Send Reset Code"
               )}
             </button>
 
-            <button
-              type="button"
-              onClick={() => switchMode("login")}
-              className="btn btn-secondary btn-full"
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                gap: "var(--space-md)",
+                marginTop: "var(--space-sm)",
+              }}
             >
-              Back to login
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (resetEmail.trim()) {
+                    setMode("reset-password");
+                  } else {
+                    setError("Please enter your email first");
+                  }
+                }}
+                className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                style={{
+                  fontSize: "var(--text-sm)",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                }}
+              >
+                Already have a code?
+              </button>
+              <span className="text-[var(--text-muted)]">•</span>
+              <button
+                type="button"
+                onClick={() => switchMode("login")}
+                className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                style={{
+                  fontSize: "var(--text-sm)",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                }}
+              >
+                Back to login
+              </button>
+            </div>
           </form>
         )}
 
-        {/* Reset Password Form (after clicking email link) */}
+        {/* Reset Password Form - Enter Code and New Password */}
         {mode === "reset-password" && (
           <form onSubmit={handleUpdatePassword} className="animate-fade-in">
             <p
@@ -1438,8 +1417,73 @@ export default function LoginPage() {
                 fontSize: "var(--text-sm)",
               }}
             >
-              Enter your new password below.
+              Enter the code from your email and choose a new password.
             </p>
+
+            <div className="form-group">
+              <label className="label" htmlFor="resetEmailField">
+                Email Address
+              </label>
+              <input
+                id="resetEmailField"
+                type="email"
+                className={`input ${error ? "input-error" : ""}`}
+                placeholder="Enter your email address"
+                value={resetEmail}
+                onChange={(e) => setResetEmail(e.target.value)}
+                autoComplete="email"
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="label" htmlFor="resetCode">
+                Reset Code
+              </label>
+              <input
+                id="resetCode"
+                type="text"
+                className={`input ${error ? "input-error" : ""}`}
+                placeholder="Enter 6-digit code from email"
+                value={resetCode}
+                onChange={(e) => setResetCode(e.target.value)}
+                autoComplete="one-time-code"
+                style={{
+                  fontFamily: "monospace",
+                  fontSize: "var(--text-lg)",
+                  letterSpacing: "4px",
+                  textAlign: "center",
+                }}
+                maxLength={6}
+                required
+              />
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  marginTop: "var(--space-xs)",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={handleResendResetCode}
+                  disabled={resendCooldown > 0 || isLoading}
+                  className="text-[var(--accent)] hover:underline"
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: resendCooldown > 0 ? "not-allowed" : "pointer",
+                    fontSize: "var(--text-xs)",
+                    padding: 0,
+                    opacity: resendCooldown > 0 ? 0.5 : 1,
+                  }}
+                >
+                  {resendCooldown > 0
+                    ? `Resend code in ${resendCooldown}s`
+                    : "Resend code"}
+                </button>
+              </div>
+            </div>
 
             <div className="form-group">
               <label className="label" htmlFor="newPassword">
@@ -1478,69 +1522,6 @@ export default function LoginPage() {
               />
             </div>
 
-            <div className="form-group">
-              <button
-                type="button"
-                onClick={() => setUseRecoveryCode((prev) => !prev)}
-                className="text-[var(--accent)] hover:underline"
-                style={{
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  fontSize: "var(--text-xs)",
-                  padding: 0,
-                  marginBottom: "var(--space-sm)",
-                }}
-              >
-                {useRecoveryCode
-                  ? "Hide recovery code option"
-                  : "Having trouble with the link? Use a recovery code instead"}
-              </button>
-            </div>
-
-            {useRecoveryCode && (
-              <div
-                style={{
-                  border: "1px solid var(--border-color)",
-                  borderRadius: "12px",
-                  padding: "var(--space-md)",
-                  marginBottom: "var(--space-md)",
-                }}
-              >
-                <div className="form-group">
-                  <label className="label" htmlFor="recoveryEmail">
-                    Email Address
-                  </label>
-                  <input
-                    id="recoveryEmail"
-                    type="email"
-                    className={`input ${error ? "input-error" : ""}`}
-                    placeholder="Enter your email address"
-                    value={recoveryEmail}
-                    onChange={(e) => setRecoveryEmail(e.target.value)}
-                    autoComplete="email"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="label" htmlFor="recoveryCode">
-                    Recovery Code
-                  </label>
-                  <input
-                    id="recoveryCode"
-                    type="text"
-                    className={`input ${error ? "input-error" : ""}`}
-                    placeholder="Enter the recovery code from email"
-                    value={recoveryCode}
-                    onChange={(e) => setRecoveryCode(e.target.value)}
-                    autoComplete="one-time-code"
-                  />
-                </div>
-                <p className="text-[var(--text-muted)]" style={{ fontSize: "var(--text-xs)" }}>
-                  This code comes from the reset email. Use this if the link was opened in a different browser.
-                </p>
-              </div>
-            )}
-
             {error && (
               <div
                 className="animate-shake"
@@ -1566,7 +1547,7 @@ export default function LoginPage() {
             <button
               type="submit"
               className="btn btn-primary btn-full btn-lg"
-              disabled={isLoading || !newPassword || !confirmNewPassword}
+              disabled={isLoading || !resetEmail || !resetCode || !newPassword || !confirmNewPassword}
               style={{ background: "#3b82f6", marginBottom: "var(--space-md)" }}
             >
               {isLoading ? (
@@ -1582,30 +1563,41 @@ export default function LoginPage() {
               )}
             </button>
 
-            <p
-              className="text-[var(--text-muted)]"
+            <div
               style={{
-                fontSize: "var(--text-xs)",
-                textAlign: "center",
-                marginBottom: "var(--space-sm)",
+                display: "flex",
+                justifyContent: "center",
+                gap: "var(--space-md)",
               }}
             >
-              Link expired?{" "}
               <button
                 type="button"
                 onClick={() => switchMode("forgot-password")}
-                className="text-[var(--accent)] hover:underline"
+                className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
                 style={{
+                  fontSize: "var(--text-sm)",
                   background: "none",
                   border: "none",
                   cursor: "pointer",
-                  fontSize: "inherit",
-                  padding: 0,
                 }}
               >
-                Request a new one
+                Request new code
               </button>
-            </p>
+              <span className="text-[var(--text-muted)]">•</span>
+              <button
+                type="button"
+                onClick={() => switchMode("login")}
+                className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                style={{
+                  fontSize: "var(--text-sm)",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                }}
+              >
+                Back to login
+              </button>
+            </div>
           </form>
         )}
 

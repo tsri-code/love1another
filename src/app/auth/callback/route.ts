@@ -10,13 +10,9 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
  * 
  * This route handles:
  * 1. Email confirmation (signup verification via OTP link)
- * 2. Password reset confirmation
+ * 2. OAuth callbacks
  * 
- * The flow is:
- * 1. User clicks link in email
- * 2. Supabase redirects to this callback with auth code
- * 3. We exchange the code for a session
- * 4. User is redirected to the app (or password reset form if recovery)
+ * Note: Password reset now uses OTP code entry, not this callback.
  */
 export async function GET(request: Request) {
   const requestUrl = request.url;
@@ -28,41 +24,16 @@ export async function GET(request: Request) {
   // Get the redirect destination (default to home)
   const next = searchParams.get('next') ?? '/';
   
-  // Check if this is a password recovery flow
-  const type = searchParams.get('type');
-  const isRecovery = type === 'recovery';
-  
-  console.log('🔐 AUTH CALLBACK - Starting', { 
-    hasCode: !!code, 
-    isRecovery, 
-    type,
-    fullUrl: requestUrl,
-    timestamp: new Date().toISOString()
-  });
-  
   // Check for error
   const error = searchParams.get('error');
   const errorDescription = searchParams.get('error_description');
   
   if (error) {
-    console.error('❌ AUTH CALLBACK - Error in URL params:', error, errorDescription);
+    console.error('Auth callback error:', error, errorDescription);
     return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(error)}`);
   }
 
   if (code) {
-    // For password recovery, pass the code to the client to handle
-    // This ensures the client-side Supabase client properly establishes the session
-    if (isRecovery) {
-      console.log('🔄 AUTH CALLBACK - Password recovery detected, passing code to client');
-      const forwardedHost = request.headers.get('x-forwarded-host');
-      const isLocalEnv = process.env.NODE_ENV === 'development';
-      const baseUrl = isLocalEnv ? origin : (forwardedHost ? `https://${forwardedHost}` : origin);
-      
-      // Pass the code to the login page for client-side exchange
-      return NextResponse.redirect(`${baseUrl}/login?mode=reset-password&code=${code}`);
-    }
-    
-    // For regular auth (not recovery), do server-side exchange
     const cookieStore = await cookies();
     
     // Track cookies that need to be set on the response
@@ -74,7 +45,6 @@ export async function GET(request: Request) {
           return cookieStore.getAll();
         },
         setAll(newCookies: { name: string; value: string; options?: CookieOptions }[]) {
-          console.log('🍪 AUTH CALLBACK - Setting cookies:', newCookies.length);
           // Store cookies to set on the redirect response
           cookiesToSet.push(...newCookies);
           // Also try to set on cookie store (may fail in Route Handler)
@@ -89,22 +59,16 @@ export async function GET(request: Request) {
       },
     });
     
-    console.log('🔄 AUTH CALLBACK - Exchanging code for session...');
     // Exchange the code for a session
     const { error: exchangeError, data } = await supabase.auth.exchangeCodeForSession(code);
     
     if (data?.session) {
-      console.log('✅ AUTH CALLBACK - Code exchange SUCCESS, session established');
+      console.log('Auth callback: Code exchange successful');
     }
     
     if (exchangeError) {
-      console.error('❌ AUTH CALLBACK - Code exchange FAILED:', exchangeError.message);
-      // Provide specific error for expired/used links
-      const errorMsg = exchangeError.message.includes('expired') || exchangeError.message.includes('invalid')
-        ? 'link_expired'
-        : 'auth_callback_error';
-      console.log(`🔀 AUTH CALLBACK - Redirecting to login with error: ${errorMsg}`);
-      return NextResponse.redirect(`${origin}/login?error=${errorMsg}`);
+      console.error('Code exchange error:', exchangeError);
+      return NextResponse.redirect(`${origin}/login?error=auth_callback_error`);
     }
 
     // Determine redirect destination
@@ -112,25 +76,17 @@ export async function GET(request: Request) {
     const isLocalEnv = process.env.NODE_ENV === 'development';
     const baseUrl = isLocalEnv ? origin : (forwardedHost ? `https://${forwardedHost}` : origin);
     
-    console.log(`🔀 AUTH CALLBACK - Redirecting to: ${baseUrl}${next}`);
-    console.log(`🍪 AUTH CALLBACK - Setting ${cookiesToSet.length} cookies on redirect`);
-    
     const response = NextResponse.redirect(`${baseUrl}${next}`);
     
     // Set all cookies on the redirect response
     cookiesToSet.forEach(({ name, value, options }) => {
-      const cookieOptions = {
+      response.cookies.set(name, value, {
         path: '/',
-        sameSite: 'lax' as const,
+        sameSite: 'lax',
         secure: process.env.NODE_ENV === 'production',
         maxAge: 60 * 60 * 24 * 7, // 7 days
-        domain: process.env.NODE_ENV === 'production' ? 'love1another.app' : undefined,
         ...options,
-      };
-      
-      console.log(`🍪 AUTH CALLBACK - Setting cookie: ${name}`, cookieOptions);
-      
-      response.cookies.set(name, value, cookieOptions);
+      });
     });
     
     return response;
