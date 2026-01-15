@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase";
+import { forceClearAuth, resetCleanupFlag } from "@/lib/auth-cleanup";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { NotificationProvider } from "@/lib/use-notifications";
 
@@ -204,13 +205,20 @@ export function AuthGuard({ children }: AuthGuardProps) {
   };
 
   // On mount, check for and clear any stale sessions that might cause refresh loops
+  // Note: Primary cleanup happens in auth-cleanup.ts BEFORE client creation.
+  // This is a secondary check for errors that occur after init.
   useEffect(() => {
     const clearStaleSession = async () => {
       try {
         const { error } = await supabase.auth.getSession();
-        if (error && (error.message.includes("refresh") || error.message.includes("token"))) {
-          console.warn("Stale session detected, clearing...");
-          await supabase.auth.signOut({ scope: "local" });
+        if (error && (error.message.includes("refresh") || error.message.includes("token") || error.message.includes("Refresh Token"))) {
+          console.warn("Stale session detected post-init, clearing...");
+          forceClearAuth();
+          try {
+            await supabase.auth.signOut({ scope: "local" });
+          } catch {
+            // Ignore signOut errors
+          }
         }
       } catch {
         // Ignore errors
@@ -292,12 +300,16 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
         if (authChangeCount > 3) {
           console.warn("Auth state change loop detected, activating circuit breaker");
-          // Activate circuit breaker
+          // Activate circuit breaker and clear all auth storage
           if (typeof window !== "undefined") {
             sessionStorage.setItem(LOOP_BREAKER_KEY, "true");
             sessionStorage.setItem(`${LOOP_BREAKER_KEY}_time`, Date.now().toString());
             sessionStorage.removeItem(LOOP_DETECTION_KEY);
-            // Clear all auth state
+
+            // Use centralized cleanup to clear all auth storage
+            forceClearAuth();
+
+            // Also try to sign out locally
             try {
               await supabase.auth.signOut({ scope: "local" });
             } catch {
@@ -428,6 +440,10 @@ export function AuthGuard({ children }: AuthGuardProps) {
           avatarColor: metadata.avatar_color || "#7c9bb8",
           avatarPath: metadata.avatar_path || null,
         });
+        
+        // Reset cleanup flag after successful login so future page loads start fresh
+        resetCleanupFlag();
+        
         setIsLoading(false);
       } else if (event === "PASSWORD_RECOVERY" && session) {
         // OTP-based recovery: user is on login page entering code
