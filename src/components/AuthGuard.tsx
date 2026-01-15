@@ -7,17 +7,17 @@ import {
   useContext,
   useCallback,
   useMemo,
+  useRef,
 } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase";
-import { forceClearAuth, resetCleanupFlag } from "@/lib/auth-cleanup";
-import type { User as SupabaseUser } from "@supabase/supabase-js";
+import type { User as SupabaseUser, Session } from "@supabase/supabase-js";
 import { NotificationProvider } from "@/lib/use-notifications";
 
 interface User {
   id: string;
   email: string;
-  username: string; // Derived from email or user_metadata
+  username: string;
   fullName: string;
   avatarInitials: string | null;
   avatarColor: string | null;
@@ -48,6 +48,55 @@ interface AuthGuardProps {
   children: React.ReactNode;
 }
 
+/**
+ * Clear all Supabase auth storage to reset to a clean state
+ */
+function clearAllAuthStorage() {
+  if (typeof window === "undefined") return;
+
+  // Clear localStorage
+  const localKeys: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && (key.startsWith("sb-") || key.includes("supabase"))) {
+      localKeys.push(key);
+    }
+  }
+  localKeys.forEach((key) => localStorage.removeItem(key));
+
+  // Clear sessionStorage
+  const sessionKeys: string[] = [];
+  for (let i = 0; i < sessionStorage.length; i++) {
+    const key = sessionStorage.key(i);
+    if (key && (key.startsWith("sb-") || key.includes("supabase"))) {
+      sessionKeys.push(key);
+    }
+  }
+  sessionKeys.forEach((key) => sessionStorage.removeItem(key));
+}
+
+/**
+ * Extract user data from Supabase user object
+ */
+function extractUserData(supabaseUser: SupabaseUser): User {
+  const metadata = supabaseUser.user_metadata || {};
+  const fullName =
+    metadata.full_name ||
+    metadata.name ||
+    supabaseUser.email?.split("@")[0] ||
+    "User";
+
+  return {
+    id: supabaseUser.id,
+    email: supabaseUser.email || "",
+    username: metadata.username || supabaseUser.email?.split("@")[0] || "",
+    fullName,
+    avatarInitials: metadata.avatar_initials || getInitials(fullName),
+    avatarColor: metadata.avatar_color || "#7c9bb8",
+    avatarPath: metadata.avatar_path || null,
+  };
+}
+
 export function AuthGuard({ children }: AuthGuardProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
@@ -58,174 +107,8 @@ export function AuthGuard({ children }: AuthGuardProps) {
   // Memoize the Supabase client to prevent recreation on every render
   const supabase = useMemo(() => createClient(), []);
 
-  const checkAuth = useCallback(async () => {
-    try {
-      // First check if there's a session at all (with timeout)
-      const sessionTimeoutPromise = new Promise<{ data: { session: null }; error: null }>(
-        (resolve) =>
-          setTimeout(() => resolve({ data: { session: null }, error: null }), 3000)
-      );
-      const { data: sessionData, error: sessionError } = await Promise.race([
-        supabase.auth.getSession(),
-        sessionTimeoutPromise,
-      ]);
-
-      // If we get a refresh token error, clear the session
-      if (sessionError) {
-        console.warn("Session error, clearing auth state:", sessionError.message);
-        try {
-          await supabase.auth.signOut({ scope: "local" });
-        } catch {
-          // Ignore signout errors
-        }
-        setUser(null);
-        setSupabaseUser(null);
-        return false;
-      }
-
-      if (!sessionData?.session) {
-        setUser(null);
-        setSupabaseUser(null);
-        return false;
-      }
-
-      // Use getUser() with timeout to prevent infinite hang
-      const timeoutPromise = new Promise<{ data: { user: null }; error: null }>(
-        (resolve) =>
-          setTimeout(() => resolve({ data: { user: null }, error: null }), 5000)
-      );
-
-      const {
-        data: { user: supabaseUserData },
-        error,
-      } = (await Promise.race([
-        supabase.auth.getUser(),
-        timeoutPromise,
-      ])) as Awaited<ReturnType<typeof supabase.auth.getUser>>;
-
-      // If we get an auth error (like invalid refresh token), clear session
-      if (error) {
-        console.warn("Auth error, clearing auth state:", error.message);
-        try {
-          await supabase.auth.signOut({ scope: "local" });
-        } catch {
-          // Ignore signout errors
-        }
-        setUser(null);
-        setSupabaseUser(null);
-        return false;
-      }
-
-      if (!supabaseUserData) {
-        setUser(null);
-        setSupabaseUser(null);
-        return false;
-      }
-
-      setSupabaseUser(supabaseUserData);
-
-      // Extract user metadata
-      const metadata = supabaseUserData.user_metadata || {};
-      const fullName =
-        metadata.full_name ||
-        metadata.name ||
-        supabaseUserData.email?.split("@")[0] ||
-        "User";
-
-      setUser({
-        id: supabaseUserData.id,
-        email: supabaseUserData.email || "",
-        username:
-          metadata.username || supabaseUserData.email?.split("@")[0] || "",
-        fullName,
-        avatarInitials: metadata.avatar_initials || getInitials(fullName),
-        avatarColor: metadata.avatar_color || "#7c9bb8",
-        avatarPath: metadata.avatar_path || null,
-      });
-
-      return true;
-    } catch (error) {
-      console.error("Auth check error:", error);
-      setUser(null);
-      setSupabaseUser(null);
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [supabase]);
-
-  const logout = async () => {
-    try {
-      // Clear encryption keys from IndexedDB
-      if (typeof indexedDB !== "undefined") {
-        try {
-          const deleteRequest = indexedDB.deleteDatabase("love1another_crypto");
-          deleteRequest.onerror = () =>
-            console.warn("Could not clear crypto DB");
-        } catch (e) {
-          console.warn("Could not clear crypto DB:", e);
-        }
-      }
-
-      // Clear remember me preferences
-      if (typeof window !== "undefined") {
-        localStorage.removeItem("rememberMe");
-        sessionStorage.removeItem("sessionActive");
-      }
-
-      // Sign out - use local scope to avoid 403 errors
-      // The 403 error on global scope is harmless but we'll avoid it
-      try {
-        await supabase.auth.signOut({ scope: "local" });
-      } catch (error) {
-        // If local scope fails or isn't supported, try without scope
-        // This is a non-critical error - user is already logged out locally
-        const status =
-          error && typeof error === "object" && "status" in error
-            ? (error as { status?: number }).status
-            : undefined;
-        if (status !== 403) {
-          try {
-            await supabase.auth.signOut();
-          } catch {
-            // Silently ignore - logout still works
-          }
-        }
-      }
-    } catch (error) {
-      console.error("Logout error:", error);
-    }
-    setUser(null);
-    setSupabaseUser(null);
-    router.push("/");
-  };
-
-  const refreshUser = async () => {
-    await checkAuth();
-  };
-
-  // On mount, check for and clear any stale sessions that might cause refresh loops
-  // Note: Primary cleanup happens in auth-cleanup.ts BEFORE client creation.
-  // This is a secondary check for errors that occur after init.
-  useEffect(() => {
-    const clearStaleSession = async () => {
-      try {
-        const { error } = await supabase.auth.getSession();
-        if (error && (error.message.includes("refresh") || error.message.includes("token") || error.message.includes("Refresh Token"))) {
-          console.warn("Stale session detected post-init, clearing...");
-          forceClearAuth();
-          try {
-            await supabase.auth.signOut({ scope: "local" });
-          } catch {
-            // Ignore signOut errors
-          }
-        }
-      } catch {
-        // Ignore errors
-      }
-    };
-    clearStaleSession();
-  }, [supabase.auth]);
+  // Track if we've completed initial auth check
+  const authInitialized = useRef(false);
 
   // Check if current path is a public page that doesn't require auth
   const isPublicPage = useCallback(() => {
@@ -241,260 +124,287 @@ export function AuthGuard({ children }: AuthGuardProps) {
     );
   }, [pathname]);
 
-  // Listen for auth state changes - this is the ONLY place we check auth
-  useEffect(() => {
-    // Persistent loop detection across component lifecycle
-    // Store in sessionStorage to survive re-renders
-    const LOOP_DETECTION_KEY = "authLoopDetection";
-    const LOOP_BREAKER_KEY = "authLoopBreaker";
+  /**
+   * Validate and refresh session if needed
+   * Returns the valid session or null if invalid
+   */
+  const validateSession = useCallback(async (): Promise<Session | null> => {
+    try {
+      // Get current session from storage (doesn't make network request)
+      const { data: sessionData, error: sessionError } =
+        await supabase.auth.getSession();
 
-    // Check if we're in a circuit breaker state
-    if (typeof window !== "undefined") {
-      const breakerActive = sessionStorage.getItem(LOOP_BREAKER_KEY);
-      if (breakerActive === "true") {
-        // Circuit breaker is active - skip all auth handling for 30 seconds
-        const breakerTime = parseInt(sessionStorage.getItem(`${LOOP_BREAKER_KEY}_time`) || "0", 10);
-        const timeSinceBreaker = Date.now() - breakerTime;
-        if (timeSinceBreaker < 30000) {
-          console.warn("Auth loop circuit breaker active, skipping auth handling");
-          setIsLoading(false);
-          return () => {};
-        } else {
-          // Breaker expired, reset
-          sessionStorage.removeItem(LOOP_BREAKER_KEY);
-          sessionStorage.removeItem(`${LOOP_BREAKER_KEY}_time`);
-          sessionStorage.removeItem(LOOP_DETECTION_KEY);
-        }
+      if (sessionError) {
+        console.warn("[Auth] Session error:", sessionError.message);
+        clearAllAuthStorage();
+        return null;
       }
+
+      if (!sessionData?.session) {
+        return null;
+      }
+
+      const session = sessionData.session;
+
+      // Check if access token is expired
+      const expiresAt = session.expires_at;
+      const now = Math.floor(Date.now() / 1000);
+      const isExpired = expiresAt && expiresAt < now + 60; // 60 second buffer
+
+      if (isExpired) {
+        // Try to refresh the session
+        console.log("[Auth] Access token expired, attempting refresh...");
+        const { data: refreshData, error: refreshError } =
+          await supabase.auth.refreshSession();
+
+        if (refreshError) {
+          console.warn("[Auth] Refresh failed:", refreshError.message);
+          // Clear storage and sign out - refresh token is invalid
+          clearAllAuthStorage();
+          try {
+            await supabase.auth.signOut({ scope: "local" });
+          } catch {
+            // Ignore
+          }
+          return null;
+        }
+
+        if (!refreshData?.session) {
+          console.warn("[Auth] Refresh returned no session");
+          clearAllAuthStorage();
+          return null;
+        }
+
+        console.log("[Auth] Session refreshed successfully");
+        return refreshData.session;
+      }
+
+      // Token is still valid, verify with server
+      const { data: userData, error: userError } =
+        await supabase.auth.getUser();
+
+      if (userError) {
+        console.warn("[Auth] User verification failed:", userError.message);
+        // If user verification fails, the session is invalid
+        clearAllAuthStorage();
+        try {
+          await supabase.auth.signOut({ scope: "local" });
+        } catch {
+          // Ignore
+        }
+        return null;
+      }
+
+      if (!userData?.user) {
+        console.warn("[Auth] No user data returned");
+        clearAllAuthStorage();
+        return null;
+      }
+
+      return session;
+    } catch (error) {
+      console.error("[Auth] Validation error:", error);
+      clearAllAuthStorage();
+      return null;
     }
+  }, [supabase.auth]);
 
-    // Track auth state change calls to detect loops
-    let authChangeCount = 0;
-    let lastAuthChangeTime = Date.now();
-    let processingAuthChange = false; // Prevent concurrent processing
+  /**
+   * Initialize auth state on mount
+   */
+  useEffect(() => {
+    if (authInitialized.current) return;
+    authInitialized.current = true;
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      // Prevent concurrent processing
-      if (processingAuthChange) {
+    const initAuth = async () => {
+      // Skip auth if password reset is in progress
+      if (
+        typeof window !== "undefined" &&
+        sessionStorage.getItem("passwordResetInProgress")
+      ) {
+        setIsLoading(false);
         return;
       }
 
-      // Detect and break out of auth loops
-      const now = Date.now();
-      const timeSinceLastChange = now - lastAuthChangeTime;
+      const session = await validateSession();
 
-      if (timeSinceLastChange < 2000) {
-        // Events within 2 seconds
-        authChangeCount++;
-
-        // Get stored count from sessionStorage
-        if (typeof window !== "undefined") {
-          const stored = sessionStorage.getItem(LOOP_DETECTION_KEY);
-          if (stored) {
-            authChangeCount = parseInt(stored, 10) + 1;
-          }
-          sessionStorage.setItem(LOOP_DETECTION_KEY, authChangeCount.toString());
-        }
-
-        if (authChangeCount > 3) {
-          console.warn("Auth state change loop detected, activating circuit breaker");
-          // Activate circuit breaker and clear all auth storage
-          if (typeof window !== "undefined") {
-            sessionStorage.setItem(LOOP_BREAKER_KEY, "true");
-            sessionStorage.setItem(`${LOOP_BREAKER_KEY}_time`, Date.now().toString());
-            sessionStorage.removeItem(LOOP_DETECTION_KEY);
-
-            // Use centralized cleanup to clear all auth storage
-            forceClearAuth();
-
-            // Also try to sign out locally
-            try {
-              await supabase.auth.signOut({ scope: "local" });
-            } catch {
-              // Ignore errors
-            }
-          }
-          setUser(null);
-          setSupabaseUser(null);
-          setIsLoading(false);
-          processingAuthChange = false;
-          return;
-        }
-      } else {
-        // Reset counter if enough time has passed
-        authChangeCount = 1;
-        if (typeof window !== "undefined") {
-          sessionStorage.setItem(LOOP_DETECTION_KEY, "1");
-        }
-      }
-      lastAuthChangeTime = now;
-
-      processingAuthChange = true;
-
-      try {
-        // Skip auth state handling if password reset is in progress
-        // This prevents re-renders that can abort the password update request
-        if (typeof window !== "undefined" && sessionStorage.getItem("passwordResetInProgress")) {
-          processingAuthChange = false;
-          return;
-        }
-
-        if (event === "INITIAL_SESSION") {
-        // This fires when Supabase has loaded the initial session from storage
+      if (session) {
+        // Check "Remember Me" logic for returning sessions
         const rememberMe = localStorage.getItem("rememberMe");
         const sessionActive = sessionStorage.getItem("sessionActive");
-        const passwordResetComplete = typeof window !== "undefined" && sessionStorage.getItem("passwordResetComplete");
-        const lastInitialSession = typeof window !== "undefined" ? parseInt(sessionStorage.getItem("lastInitialSession") || "0", 10) : 0;
-        const timeSinceLastInitial = Date.now() - lastInitialSession;
 
-        // Prevent rapid INITIAL_SESSION events (can happen after page reload)
-        if (timeSinceLastInitial < 1000 && !session && pathname === "/login") {
-          setIsLoading(false);
-          processingAuthChange = false;
-          return;
-        }
-
-        // Track when INITIAL_SESSION was last processed
-        if (typeof window !== "undefined") {
-          sessionStorage.setItem("lastInitialSession", Date.now().toString());
-        }
-
-        // Early return if no session and we're on login page (prevents loops after password reset)
-        if (!session && pathname === "/login" && passwordResetComplete) {
-          setUser(null);
-          setSupabaseUser(null);
-          setIsLoading(false);
-          processingAuthChange = false;
-          // Clear the flag after handling
-          if (typeof window !== "undefined") {
-            sessionStorage.removeItem("passwordResetComplete");
-            sessionStorage.removeItem("lastInitialSession");
-          }
-          return;
-        }
-
-        // Handle "Remember Me" logic
-        if (!rememberMe && !sessionActive && session) {
+        if (!rememberMe && !sessionActive) {
           // User didn't want to be remembered, and this is a new browser session
-          await supabase.auth.signOut();
+          await supabase.auth.signOut({ scope: "local" });
           setUser(null);
           setSupabaseUser(null);
           setIsLoading(false);
           if (!isPublicPage()) {
             router.push("/login");
           }
-          processingAuthChange = false;
           return;
         }
 
-        if (session) {
-          // Session exists, set user data
-          const supabaseUserData = session.user;
-          setSupabaseUser(supabaseUserData);
-
-          const metadata = supabaseUserData.user_metadata || {};
-          const fullName =
-            metadata.full_name ||
-            metadata.name ||
-            supabaseUserData.email?.split("@")[0] ||
-            "User";
-
-          setUser({
-            id: supabaseUserData.id,
-            email: supabaseUserData.email || "",
-            username:
-              metadata.username || supabaseUserData.email?.split("@")[0] || "",
-            fullName,
-            avatarInitials: metadata.avatar_initials || getInitials(fullName),
-            avatarColor: metadata.avatar_color || "#7c9bb8",
-            avatarPath: metadata.avatar_path || null,
-          });
-        } else {
-          setUser(null);
-          setSupabaseUser(null);
-          if (!isPublicPage()) {
-            router.push("/login");
-          }
-        }
-        setIsLoading(false);
-      } else if (event === "SIGNED_IN" && session) {
-        const supabaseUserData = session.user;
-        setSupabaseUser(supabaseUserData);
-
-        const metadata = supabaseUserData.user_metadata || {};
-        const fullName =
-          metadata.full_name ||
-          metadata.name ||
-          supabaseUserData.email?.split("@")[0] ||
-          "User";
-
-        setUser({
-          id: supabaseUserData.id,
-          email: supabaseUserData.email || "",
-          username:
-            metadata.username || supabaseUserData.email?.split("@")[0] || "",
-          fullName,
-          avatarInitials: metadata.avatar_initials || getInitials(fullName),
-          avatarColor: metadata.avatar_color || "#7c9bb8",
-          avatarPath: metadata.avatar_path || null,
-        });
-        
-        // Reset cleanup flag after successful login so future page loads start fresh
-        resetCleanupFlag();
-        
-        setIsLoading(false);
-      } else if (event === "PASSWORD_RECOVERY" && session) {
-        // OTP-based recovery: user is on login page entering code
-        // Set session but don't set user (they haven't completed reset yet)
-        // The login page handles the updateUser() and signOut()
+        // Valid session - set user data
         setSupabaseUser(session.user);
-        setIsLoading(false);
-        // Stay on login page - don't redirect anywhere
-      } else if (event === "SIGNED_OUT") {
+        setUser(extractUserData(session.user));
+      } else {
+        // No valid session
         setUser(null);
         setSupabaseUser(null);
-        setIsLoading(false);
-        // Don't redirect if password reset just completed (prevents loops)
-        const passwordResetComplete = typeof window !== "undefined" && sessionStorage.getItem("passwordResetComplete");
-        // Don't redirect if we're already on login page (e.g., after password reset)
-        // This prevents loops when redirecting from password reset flow
-        if (!passwordResetComplete && !isPublicPage() && pathname !== "/login") {
-          router.push("/");
+        if (!isPublicPage()) {
+          router.push("/login");
         }
-      } else if (event === "TOKEN_REFRESHED" && session) {
-        // Session was refreshed, update user data
-        const supabaseUserData = session.user;
-        setSupabaseUser(supabaseUserData);
-
-        const metadata = supabaseUserData.user_metadata || {};
-        const fullName =
-          metadata.full_name ||
-          metadata.name ||
-          supabaseUserData.email?.split("@")[0] ||
-          "User";
-
-        setUser({
-          id: supabaseUserData.id,
-          email: supabaseUserData.email || "",
-          username:
-            metadata.username || supabaseUserData.email?.split("@")[0] || "",
-          fullName,
-          avatarInitials: metadata.avatar_initials || getInitials(fullName),
-          avatarColor: metadata.avatar_color || "#7c9bb8",
-          avatarPath: metadata.avatar_path || null,
-        });
       }
-      } finally {
-        processingAuthChange = false;
+
+      setIsLoading(false);
+    };
+
+    initAuth();
+  }, [supabase.auth, validateSession, isPublicPage, router]);
+
+  /**
+   * Listen for auth state changes (login, logout, etc.)
+   * Since we disabled autoRefreshToken, this only fires for explicit auth actions
+   */
+  useEffect(() => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // Skip if password reset is in progress
+      if (
+        typeof window !== "undefined" &&
+        sessionStorage.getItem("passwordResetInProgress")
+      ) {
+        return;
+      }
+
+      console.log("[Auth] State change:", event);
+
+      switch (event) {
+        case "SIGNED_IN":
+          if (session) {
+            setSupabaseUser(session.user);
+            setUser(extractUserData(session.user));
+            // Mark session as active for "Remember Me" logic
+            sessionStorage.setItem("sessionActive", "true");
+          }
+          setIsLoading(false);
+          break;
+
+        case "SIGNED_OUT":
+          setUser(null);
+          setSupabaseUser(null);
+          setIsLoading(false);
+          // Don't redirect if we're already on a public page
+          if (!isPublicPage() && pathname !== "/login") {
+            router.push("/");
+          }
+          break;
+
+        case "TOKEN_REFRESHED":
+          if (session) {
+            setSupabaseUser(session.user);
+            setUser(extractUserData(session.user));
+          }
+          break;
+
+        case "PASSWORD_RECOVERY":
+          // User clicked password reset link - don't set user, let login page handle
+          if (session) {
+            setSupabaseUser(session.user);
+          }
+          setIsLoading(false);
+          break;
+
+        case "USER_UPDATED":
+          if (session) {
+            setSupabaseUser(session.user);
+            setUser(extractUserData(session.user));
+          }
+          break;
+
+        case "INITIAL_SESSION":
+          // This is handled by initAuth on mount, skip here
+          // to avoid duplicate processing
+          break;
+
+        default:
+          break;
       }
     });
 
     return () => {
       subscription.unsubscribe();
     };
-  }, [pathname, router, checkAuth, supabase.auth, isPublicPage]);
+  }, [supabase.auth, router, pathname, isPublicPage]);
+
+  /**
+   * Periodic token refresh (since we disabled auto-refresh)
+   * Check every 5 minutes if token needs refresh
+   */
+  useEffect(() => {
+    if (!user) return;
+
+    const refreshInterval = setInterval(
+      async () => {
+        const session = await validateSession();
+        if (!session) {
+          // Session became invalid - user needs to re-login
+          setUser(null);
+          setSupabaseUser(null);
+          if (!isPublicPage()) {
+            router.push("/login");
+          }
+        }
+      },
+      5 * 60 * 1000
+    ); // 5 minutes
+
+    return () => clearInterval(refreshInterval);
+  }, [user, validateSession, isPublicPage, router]);
+
+  const logout = async () => {
+    try {
+      // Clear encryption keys from IndexedDB
+      if (typeof indexedDB !== "undefined") {
+        try {
+          indexedDB.deleteDatabase("love1another_crypto");
+        } catch (e) {
+          console.warn("Could not clear crypto DB:", e);
+        }
+      }
+
+      // Clear remember me preferences
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("rememberMe");
+        sessionStorage.removeItem("sessionActive");
+      }
+
+      // Sign out locally
+      try {
+        await supabase.auth.signOut({ scope: "local" });
+      } catch {
+        // Ignore errors
+      }
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
+    setUser(null);
+    setSupabaseUser(null);
+    router.push("/");
+  };
+
+  const refreshUser = useCallback(async () => {
+    const session = await validateSession();
+    if (session) {
+      setSupabaseUser(session.user);
+      setUser(extractUserData(session.user));
+    } else {
+      setUser(null);
+      setSupabaseUser(null);
+    }
+  }, [validateSession]);
 
   // Show loading state
   if (isLoading) {
@@ -531,9 +441,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
         value={{ user, supabaseUser, isLoading, logout, refreshUser }}
       >
         {user ? (
-          <NotificationProvider userId={user.id}>
-            {children}
-          </NotificationProvider>
+          <NotificationProvider userId={user.id}>{children}</NotificationProvider>
         ) : (
           children
         )}

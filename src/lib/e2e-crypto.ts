@@ -474,7 +474,7 @@ async function getStoredPrivateKey(userId: string): Promise<CryptoKey | null> {
 /**
  * Retrieve the stored prayer key from IndexedDB
  */
-async function getStoredPrayerKey(userId: string): Promise<CryptoKey | null> {
+export async function getStoredPrayerKey(userId: string): Promise<CryptoKey | null> {
   return getStoredKey(`prayerKey_${userId}`);
 }
 
@@ -825,7 +825,7 @@ export async function getStoredDEK(userId: string): Promise<CryptoKey | null> {
 
 /**
  * Encrypt content using the DEK (e2ee_v2 scheme)
- * 
+ *
  * @param content - Content to encrypt
  * @param userId - User ID to look up DEK
  * @returns Encrypted data with version tag
@@ -848,7 +848,7 @@ export async function encryptWithDEK(
 
 /**
  * Decrypt content using the DEK (e2ee_v2 scheme)
- * 
+ *
  * @param encrypted - Encrypted data
  * @param userId - User ID to look up DEK
  * @returns Decrypted content
@@ -868,7 +868,7 @@ export async function decryptWithDEK(
 /**
  * Encrypt prayers using DEK (e2ee_v2 scheme)
  * No salt needed since we use the same DEK
- * 
+ *
  * @param prayers - Prayer data object
  * @param userId - User ID to look up DEK
  * @returns Encrypted data with IV and version
@@ -889,7 +889,7 @@ export async function encryptPrayersWithDEK(
 
 /**
  * Decrypt prayers using DEK (e2ee_v2 scheme)
- * 
+ *
  * @param encryptedBase64 - Encrypted prayer data
  * @param ivBase64 - Initialization vector
  * @param userId - User ID to look up DEK
@@ -912,7 +912,7 @@ export async function decryptPrayersWithDEK(
 
 /**
  * Try to decrypt prayers, handling both legacy and e2ee_v2 schemes
- * 
+ *
  * @param encryptedBase64 - Encrypted prayer data
  * @param ivBase64 - Initialization vector
  * @param saltBase64 - Salt (only used for legacy scheme)

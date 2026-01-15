@@ -11,6 +11,8 @@ import {
   AlertCircleIcon,
 } from "@/components/ui/alert";
 import { PasswordInput } from "@/components/PasswordInput";
+import { MigrationSetup } from "@/components/MigrationSetup";
+import { checkNeedsMigration } from "@/lib/migration-crypto";
 
 type AuthMode = "login" | "signup" | "verify-otp" | "forgot-password" | "reset-password";
 
@@ -44,6 +46,11 @@ export default function LoginPage() {
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [resetCode, setResetCode] = useState(""); // OTP code for password reset
   const [resendCooldown, setResendCooldown] = useState(0); // Cooldown timer for resend
+
+  // Migration state
+  const [showMigration, setShowMigration] = useState(false);
+  const [migrationUserId, setMigrationUserId] = useState("");
+  const [migrationPassword, setMigrationPassword] = useState("");
 
   // Ref to track if password reset is in progress (prevents auth state change interference)
   const isResettingPasswordRef = useRef(false);
@@ -244,6 +251,17 @@ export default function LoginPage() {
         if (userKeys) {
           try {
             await unlock(userKeys, password, data.user.id);
+            
+            // Check if user needs migration to new encryption system
+            const needsMigration = await checkNeedsMigration(data.user.id);
+            if (needsMigration) {
+              // Show migration modal instead of redirecting
+              setMigrationUserId(data.user.id);
+              setMigrationPassword(password);
+              setShowMigration(true);
+              setIsLoading(false);
+              return; // Don't redirect yet - wait for migration to complete
+            }
           } catch (unlockError) {
             // If unlock fails (e.g., after password reset), user will need to restore via recovery code
             // This is expected when the password has changed - they can restore in Settings
@@ -833,6 +851,31 @@ export default function LoginPage() {
             Email verified. Logging you in...
           </p>
         </div>
+      </div>
+    );
+  }
+
+  // Show migration setup modal
+  if (showMigration && migrationUserId && migrationPassword) {
+    return (
+      <div className="lock-screen">
+        <MigrationSetup
+          userId={migrationUserId}
+          password={migrationPassword}
+          onComplete={() => {
+            // Clear sensitive data
+            setMigrationPassword("");
+            setShowMigration(false);
+            // Redirect to home
+            router.push("/");
+            router.refresh();
+          }}
+          onError={(errorMsg) => {
+            setError(errorMsg);
+            setShowMigration(false);
+            setMigrationPassword("");
+          }}
+        />
       </div>
     );
   }
