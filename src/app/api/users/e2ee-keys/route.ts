@@ -85,7 +85,16 @@ export async function POST(request: NextRequest) {
       error: authError,
     } = await supabase.auth.getUser();
 
-    if (authError || !user) {
+    if (authError) {
+      console.error("[E2EE Keys] Auth error:", authError);
+      return NextResponse.json(
+        { error: "Unauthorized", details: authError.message },
+        { status: 401 }
+      );
+    }
+
+    if (!user) {
+      console.error("[E2EE Keys] No user found");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

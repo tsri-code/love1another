@@ -20,6 +20,7 @@ import {
   importDEK,
   storeDEKInSession,
 } from "./dek-crypto";
+import { createClient } from "./supabase";
 
 // ============================================================================
 // Types
@@ -175,6 +176,7 @@ async function updateProfileEncryption(
 
 /**
  * Save E2EE keys to database
+ * Uses client-side Supabase client directly to avoid cookie timing issues
  */
 async function saveE2EEKeys(
   userId: string,
@@ -187,39 +189,52 @@ async function saveE2EEKeys(
   },
   migrationState: "migrating" | "upgraded"
 ): Promise<void> {
-  const response = await fetch("/api/users/e2ee-keys", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      userId,
-      ...keys,
-      migrationState,
-    }),
-  });
+  const supabase = createClient();
 
-  if (!response.ok) {
-    throw new Error("Failed to save E2EE keys");
+  const { error } = await supabase.from("user_e2ee_keys").upsert(
+    {
+      user_id: userId,
+      version: 1,
+      wrapped_dek_password: keys.wrappedDekPassword,
+      password_kdf_salt: keys.passwordKdfSalt,
+      wrapped_dek_recovery: keys.wrappedDekRecovery || null,
+      recovery_kdf_salt: keys.recoveryKdfSalt || null,
+      encrypted_recovery_code: keys.encryptedRecoveryCode || null,
+      migration_state: migrationState,
+      updated_at: new Date().toISOString(),
+    },
+    {
+      onConflict: "user_id",
+    }
+  );
+
+  if (error) {
+    console.error("[Migration] Failed to save E2EE keys:", error);
+    throw new Error(`Failed to save E2EE keys: ${error.message}`);
   }
 }
 
 /**
  * Update E2EE migration state
+ * Uses client-side Supabase client directly to avoid cookie timing issues
  */
 async function updateMigrationState(
   userId: string,
   state: "migrating" | "upgraded"
 ): Promise<void> {
-  const response = await fetch("/api/users/e2ee-keys", {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      userId,
-      migrationState: state,
-    }),
-  });
+  const supabase = createClient();
 
-  if (!response.ok) {
-    throw new Error("Failed to update migration state");
+  const { error } = await supabase
+    .from("user_e2ee_keys")
+    .update({
+      migration_state: state,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", userId);
+
+  if (error) {
+    console.error("[Migration] Failed to update migration state:", error);
+    throw new Error(`Failed to update migration state: ${error.message}`);
   }
 }
 
@@ -439,46 +454,57 @@ async function decryptWithDEK(
 /**
  * Check if a user needs migration
  * Returns true if user has no E2EE keys record or is in 'legacy' state
+ * Uses client-side Supabase client directly to avoid cookie timing issues
  */
 export async function checkNeedsMigration(userId: string): Promise<boolean> {
   try {
-    const response = await fetch(`/api/users/e2ee-keys?userId=${userId}`);
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("user_e2ee_keys")
+      .select("migration_state")
+      .eq("user_id", userId)
+      .single();
 
-    if (response.status === 404) {
-      return true; // No E2EE keys - needs migration
-    }
-
-    if (!response.ok) {
-      console.warn("[Migration] Could not check migration status");
+    if (error) {
+      if (error.code === "PGRST116") {
+        // No rows - needs migration
+        return true;
+      }
+      console.warn("[Migration] Could not check migration status:", error);
       return false; // Error - don't force migration
     }
 
-    const data = await response.json();
-    return data.migrationState === "legacy" || !data.migrationState;
-  } catch {
+    return data.migration_state === "legacy" || !data.migration_state;
+  } catch (error) {
+    console.warn("[Migration] Error checking migration status:", error);
     return false; // Error - don't force migration
   }
 }
 
 /**
  * Get the current migration state for a user
+ * Uses client-side Supabase client directly to avoid cookie timing issues
  */
 export async function getMigrationState(
   userId: string
 ): Promise<"legacy" | "migrating" | "upgraded" | null> {
   try {
-    const response = await fetch(`/api/users/e2ee-keys?userId=${userId}`);
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("user_e2ee_keys")
+      .select("migration_state")
+      .eq("user_id", userId)
+      .single();
 
-    if (response.status === 404) {
-      return "legacy";
-    }
-
-    if (!response.ok) {
+    if (error) {
+      if (error.code === "PGRST116") {
+        // No rows - legacy state
+        return "legacy";
+      }
       return null;
     }
 
-    const data = await response.json();
-    return data.migrationState || "legacy";
+    return (data.migration_state as "legacy" | "migrating" | "upgraded") || "legacy";
   } catch {
     return null;
   }
