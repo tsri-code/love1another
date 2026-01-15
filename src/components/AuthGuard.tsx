@@ -60,14 +60,27 @@ export function AuthGuard({ children }: AuthGuardProps) {
   const checkAuth = useCallback(async () => {
     try {
       // First check if there's a session at all (with timeout)
-      const sessionTimeoutPromise = new Promise<{ data: { session: null } }>(
+      const sessionTimeoutPromise = new Promise<{ data: { session: null }; error: null }>(
         (resolve) =>
-          setTimeout(() => resolve({ data: { session: null } }), 3000)
+          setTimeout(() => resolve({ data: { session: null }, error: null }), 3000)
       );
-      const { data: sessionData } = await Promise.race([
+      const { data: sessionData, error: sessionError } = await Promise.race([
         supabase.auth.getSession(),
         sessionTimeoutPromise,
       ]);
+
+      // If we get a refresh token error, clear the session
+      if (sessionError) {
+        console.warn("Session error, clearing auth state:", sessionError.message);
+        try {
+          await supabase.auth.signOut({ scope: "local" });
+        } catch {
+          // Ignore signout errors
+        }
+        setUser(null);
+        setSupabaseUser(null);
+        return false;
+      }
 
       if (!sessionData?.session) {
         setUser(null);
@@ -89,7 +102,20 @@ export function AuthGuard({ children }: AuthGuardProps) {
         timeoutPromise,
       ])) as Awaited<ReturnType<typeof supabase.auth.getUser>>;
 
-      if (error || !supabaseUserData) {
+      // If we get an auth error (like invalid refresh token), clear session
+      if (error) {
+        console.warn("Auth error, clearing auth state:", error.message);
+        try {
+          await supabase.auth.signOut({ scope: "local" });
+        } catch {
+          // Ignore signout errors
+        }
+        setUser(null);
+        setSupabaseUser(null);
+        return false;
+      }
+
+      if (!supabaseUserData) {
         setUser(null);
         setSupabaseUser(null);
         return false;
@@ -177,6 +203,22 @@ export function AuthGuard({ children }: AuthGuardProps) {
     await checkAuth();
   };
 
+  // On mount, check for and clear any stale sessions that might cause refresh loops
+  useEffect(() => {
+    const clearStaleSession = async () => {
+      try {
+        const { error } = await supabase.auth.getSession();
+        if (error && (error.message.includes("refresh") || error.message.includes("token"))) {
+          console.warn("Stale session detected, clearing...");
+          await supabase.auth.signOut({ scope: "local" });
+        }
+      } catch {
+        // Ignore errors
+      }
+    };
+    clearStaleSession();
+  }, [supabase.auth]);
+
   // Check if current path is a public page that doesn't require auth
   const isPublicPage = useCallback(() => {
     return (
@@ -193,9 +235,35 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
   // Listen for auth state changes - this is the ONLY place we check auth
   useEffect(() => {
+    // Track auth state change calls to detect loops
+    let authChangeCount = 0;
+    let lastAuthChangeTime = Date.now();
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // Detect and break out of auth loops
+      const now = Date.now();
+      if (now - lastAuthChangeTime < 1000) {
+        authChangeCount++;
+        if (authChangeCount > 5) {
+          console.warn("Auth state change loop detected, breaking out");
+          // Clear potentially corrupt session data
+          try {
+            await supabase.auth.signOut({ scope: "local" });
+          } catch {
+            // Ignore errors during emergency signout
+          }
+          setUser(null);
+          setSupabaseUser(null);
+          setIsLoading(false);
+          return;
+        }
+      } else {
+        authChangeCount = 1;
+      }
+      lastAuthChangeTime = now;
+
       // Skip auth state handling if password reset is in progress
       // This prevents re-renders that can abort the password update request
       if (typeof window !== "undefined" && sessionStorage.getItem("passwordResetInProgress")) {
