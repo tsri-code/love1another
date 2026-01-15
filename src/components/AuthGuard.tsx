@@ -235,45 +235,133 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
   // Listen for auth state changes - this is the ONLY place we check auth
   useEffect(() => {
+    // Persistent loop detection across component lifecycle
+    // Store in sessionStorage to survive re-renders
+    const LOOP_DETECTION_KEY = "authLoopDetection";
+    const LOOP_BREAKER_KEY = "authLoopBreaker";
+
+    // Check if we're in a circuit breaker state
+    if (typeof window !== "undefined") {
+      const breakerActive = sessionStorage.getItem(LOOP_BREAKER_KEY);
+      if (breakerActive === "true") {
+        // Circuit breaker is active - skip all auth handling for 30 seconds
+        const breakerTime = parseInt(sessionStorage.getItem(`${LOOP_BREAKER_KEY}_time`) || "0", 10);
+        const timeSinceBreaker = Date.now() - breakerTime;
+        if (timeSinceBreaker < 30000) {
+          console.warn("Auth loop circuit breaker active, skipping auth handling");
+          setIsLoading(false);
+          return () => {};
+        } else {
+          // Breaker expired, reset
+          sessionStorage.removeItem(LOOP_BREAKER_KEY);
+          sessionStorage.removeItem(`${LOOP_BREAKER_KEY}_time`);
+          sessionStorage.removeItem(LOOP_DETECTION_KEY);
+        }
+      }
+    }
+
     // Track auth state change calls to detect loops
     let authChangeCount = 0;
     let lastAuthChangeTime = Date.now();
+    let processingAuthChange = false; // Prevent concurrent processing
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // Prevent concurrent processing
+      if (processingAuthChange) {
+        return;
+      }
+
       // Detect and break out of auth loops
       const now = Date.now();
-      if (now - lastAuthChangeTime < 1000) {
+      const timeSinceLastChange = now - lastAuthChangeTime;
+
+      if (timeSinceLastChange < 2000) {
+        // Events within 2 seconds
         authChangeCount++;
-        if (authChangeCount > 5) {
-          console.warn("Auth state change loop detected, breaking out");
-          // Clear potentially corrupt session data
-          try {
-            await supabase.auth.signOut({ scope: "local" });
-          } catch {
-            // Ignore errors during emergency signout
+
+        // Get stored count from sessionStorage
+        if (typeof window !== "undefined") {
+          const stored = sessionStorage.getItem(LOOP_DETECTION_KEY);
+          if (stored) {
+            authChangeCount = parseInt(stored, 10) + 1;
+          }
+          sessionStorage.setItem(LOOP_DETECTION_KEY, authChangeCount.toString());
+        }
+
+        if (authChangeCount > 3) {
+          console.warn("Auth state change loop detected, activating circuit breaker");
+          // Activate circuit breaker
+          if (typeof window !== "undefined") {
+            sessionStorage.setItem(LOOP_BREAKER_KEY, "true");
+            sessionStorage.setItem(`${LOOP_BREAKER_KEY}_time`, Date.now().toString());
+            sessionStorage.removeItem(LOOP_DETECTION_KEY);
+            // Clear all auth state
+            try {
+              await supabase.auth.signOut({ scope: "local" });
+            } catch {
+              // Ignore errors
+            }
           }
           setUser(null);
           setSupabaseUser(null);
           setIsLoading(false);
+          processingAuthChange = false;
           return;
         }
       } else {
+        // Reset counter if enough time has passed
         authChangeCount = 1;
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem(LOOP_DETECTION_KEY, "1");
+        }
       }
       lastAuthChangeTime = now;
 
-      // Skip auth state handling if password reset is in progress
-      // This prevents re-renders that can abort the password update request
-      if (typeof window !== "undefined" && sessionStorage.getItem("passwordResetInProgress")) {
-        return;
-      }
+      processingAuthChange = true;
 
-      if (event === "INITIAL_SESSION") {
+      try {
+        // Skip auth state handling if password reset is in progress
+        // This prevents re-renders that can abort the password update request
+        if (typeof window !== "undefined" && sessionStorage.getItem("passwordResetInProgress")) {
+          processingAuthChange = false;
+          return;
+        }
+
+        if (event === "INITIAL_SESSION") {
         // This fires when Supabase has loaded the initial session from storage
         const rememberMe = localStorage.getItem("rememberMe");
         const sessionActive = sessionStorage.getItem("sessionActive");
+        const passwordResetComplete = typeof window !== "undefined" && sessionStorage.getItem("passwordResetComplete");
+        const lastInitialSession = typeof window !== "undefined" ? parseInt(sessionStorage.getItem("lastInitialSession") || "0", 10) : 0;
+        const timeSinceLastInitial = Date.now() - lastInitialSession;
+
+        // Prevent rapid INITIAL_SESSION events (can happen after page reload)
+        if (timeSinceLastInitial < 1000 && !session && pathname === "/login") {
+          setIsLoading(false);
+          processingAuthChange = false;
+          return;
+        }
+
+        // Track when INITIAL_SESSION was last processed
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem("lastInitialSession", Date.now().toString());
+        }
+
+        // Early return if no session and we're on login page (prevents loops after password reset)
+        if (!session && pathname === "/login" && passwordResetComplete) {
+          setUser(null);
+          setSupabaseUser(null);
+          setIsLoading(false);
+          processingAuthChange = false;
+          // Clear the flag after handling
+          if (typeof window !== "undefined") {
+            sessionStorage.removeItem("passwordResetComplete");
+            sessionStorage.removeItem("lastInitialSession");
+          }
+          return;
+        }
 
         // Handle "Remember Me" logic
         if (!rememberMe && !sessionActive && session) {
@@ -285,6 +373,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
           if (!isPublicPage()) {
             router.push("/login");
           }
+          processingAuthChange = false;
           return;
         }
 
@@ -351,7 +440,11 @@ export function AuthGuard({ children }: AuthGuardProps) {
         setUser(null);
         setSupabaseUser(null);
         setIsLoading(false);
-        if (!isPublicPage()) {
+        // Don't redirect if password reset just completed (prevents loops)
+        const passwordResetComplete = typeof window !== "undefined" && sessionStorage.getItem("passwordResetComplete");
+        // Don't redirect if we're already on login page (e.g., after password reset)
+        // This prevents loops when redirecting from password reset flow
+        if (!passwordResetComplete && !isPublicPage() && pathname !== "/login") {
           router.push("/");
         }
       } else if (event === "TOKEN_REFRESHED" && session) {
@@ -376,6 +469,9 @@ export function AuthGuard({ children }: AuthGuardProps) {
           avatarColor: metadata.avatar_color || "#7c9bb8",
           avatarPath: metadata.avatar_path || null,
         });
+      }
+      } finally {
+        processingAuthChange = false;
       }
     });
 

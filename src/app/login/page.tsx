@@ -242,7 +242,35 @@ export default function LoginPage() {
         // Unlock encryption keys
         const userKeys = await fetchUserKeys(data.user.id);
         if (userKeys) {
-          await unlock(userKeys, password, data.user.id);
+          try {
+            await unlock(userKeys, password, data.user.id);
+          } catch (unlockError) {
+            // If unlock fails (e.g., after password reset), regenerate keys
+            // This is expected when the password has changed
+            console.warn("Could not unlock existing keys, regenerating...", unlockError);
+            try {
+              const newKeys = await generateKeys(password);
+              // Update the keys in the database
+              const { error: updateError } = await supabase
+                .from("user_keys")
+                .update({
+                  public_key: newKeys.publicKey,
+                  encrypted_private_key: newKeys.encryptedPrivateKey,
+                  key_salt: newKeys.keySalt,
+                })
+                .eq("user_id", data.user.id);
+
+              if (updateError) {
+                console.error("Failed to update encryption keys:", updateError);
+              } else {
+                // Unlock the new keys
+                await unlock(newKeys, password, data.user.id);
+              }
+            } catch (regenError) {
+              console.error("Failed to regenerate encryption keys:", regenError);
+              // Continue anyway - user can still use the app, just can't decrypt old data
+            }
+          }
         }
 
         // Redirect to home
@@ -661,20 +689,60 @@ export default function LoginPage() {
       }
 
       // Step 3: Sign out for security - user must log in with new password
+      // Clear the password reset flag BEFORE signOut to prevent auth state interference
+      isResettingPasswordRef.current = false;
+      if (typeof window !== "undefined") {
+        sessionStorage.removeItem("passwordResetInProgress");
+        // Set a flag to prevent SIGNED_OUT handler from redirecting
+        sessionStorage.setItem("passwordResetComplete", "true");
+      }
+
       try {
+        // Sign out and wait for it to complete
         await supabase.auth.signOut({ scope: "local" });
+        // Clear ALL Supabase storage to prevent token refresh attempts
+        if (typeof window !== "undefined") {
+          // Clear Supabase auth storage keys
+          const keysToRemove: string[] = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && (key.startsWith("sb-") || key.includes("supabase"))) {
+              keysToRemove.push(key);
+            }
+          }
+          keysToRemove.forEach(key => localStorage.removeItem(key));
+
+          // Also clear sessionStorage Supabase keys
+          const sessionKeysToRemove: string[] = [];
+          for (let i = 0; i < sessionStorage.length; i++) {
+            const key = sessionStorage.key(i);
+            if (key && (key.startsWith("sb-") || key.includes("supabase"))) {
+              sessionKeysToRemove.push(key);
+            }
+          }
+          sessionKeysToRemove.forEach(key => sessionStorage.removeItem(key));
+        }
+        // Wait a bit longer to ensure signOut completes fully
+        await new Promise(resolve => setTimeout(resolve, 300));
       } catch {
         // Non-critical error
       }
 
-      isResettingPasswordRef.current = false;
-      if (typeof window !== "undefined") {
-        sessionStorage.removeItem("passwordResetInProgress");
-      }
       setSuccess("Password updated successfully! Redirecting to login...");
 
       // Redirect to login page with success message
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Use a small delay to ensure signOut is fully processed
+      await new Promise(resolve => setTimeout(resolve, 500));
+      // Clear all flags and loop detection counters before redirect
+      if (typeof window !== "undefined") {
+        // Clear password reset flag
+        sessionStorage.removeItem("passwordResetComplete");
+        // Clear loop detection counters to prevent circuit breaker on new page
+        sessionStorage.removeItem("authLoopDetection");
+        sessionStorage.removeItem("authLoopBreaker");
+        sessionStorage.removeItem("authLoopBreaker_time");
+        sessionStorage.removeItem("lastInitialSession");
+      }
       window.location.href = "/login?success=password_updated";
     } catch (err) {
       isResettingPasswordRef.current = false;
