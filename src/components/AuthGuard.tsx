@@ -196,6 +196,12 @@ export function AuthGuard({ children }: AuthGuardProps) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // Skip auth state handling if password reset is in progress
+      // This prevents re-renders that can abort the password update request
+      if (typeof window !== "undefined" && sessionStorage.getItem("passwordResetInProgress")) {
+        return;
+      }
+
       if (event === "INITIAL_SESSION") {
         // This fires when Supabase has loaded the initial session from storage
         const rememberMe = localStorage.getItem("rememberMe");

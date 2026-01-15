@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import { useCrypto } from "@/lib/use-crypto";
@@ -44,6 +44,9 @@ export default function LoginPage() {
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [resetCode, setResetCode] = useState(""); // OTP code for password reset
   const [resendCooldown, setResendCooldown] = useState(0); // Cooldown timer for resend
+
+  // Ref to track if password reset is in progress (prevents auth state change interference)
+  const isResettingPasswordRef = useRef(false);
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -594,6 +597,12 @@ export default function LoginPage() {
       return;
     }
 
+    // Mark that we're in the password reset process to prevent auth state interference
+    isResettingPasswordRef.current = true;
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("passwordResetInProgress", "true");
+    }
+
     try {
       // Step 1: Verify the OTP code - this establishes a recovery session
       const { error: verifyError, data: verifyData } = await supabase.auth.verifyOtp({
@@ -603,6 +612,10 @@ export default function LoginPage() {
       });
 
       if (verifyError) {
+        isResettingPasswordRef.current = false;
+        if (typeof window !== "undefined") {
+          sessionStorage.removeItem("passwordResetInProgress");
+        }
         // Provide user-friendly error messages
         if (verifyError.message.includes("expired") || verifyError.message.includes("invalid")) {
           setError("Reset code is invalid or expired. Please request a new one.");
@@ -616,10 +629,17 @@ export default function LoginPage() {
       }
 
       if (!verifyData?.session) {
+        isResettingPasswordRef.current = false;
+        if (typeof window !== "undefined") {
+          sessionStorage.removeItem("passwordResetInProgress");
+        }
         setError("Failed to verify reset code. Please try again.");
         setIsLoading(false);
         return;
       }
+
+      // Small delay to let auth state settle before continuing
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       // Step 2: Update the password (now we have a valid session)
       const { error: updateError } = await supabase.auth.updateUser({
@@ -627,6 +647,10 @@ export default function LoginPage() {
       });
 
       if (updateError) {
+        isResettingPasswordRef.current = false;
+        if (typeof window !== "undefined") {
+          sessionStorage.removeItem("passwordResetInProgress");
+        }
         if (updateError.message.includes("same")) {
           setError("New password must be different from your previous password.");
         } else {
@@ -643,12 +667,20 @@ export default function LoginPage() {
         // Non-critical error
       }
 
+      isResettingPasswordRef.current = false;
+      if (typeof window !== "undefined") {
+        sessionStorage.removeItem("passwordResetInProgress");
+      }
       setSuccess("Password updated successfully! Redirecting to login...");
 
       // Redirect to login page with success message
       await new Promise(resolve => setTimeout(resolve, 1500));
       window.location.href = "/login?success=password_updated";
     } catch (err) {
+      isResettingPasswordRef.current = false;
+      if (typeof window !== "undefined") {
+        sessionStorage.removeItem("passwordResetInProgress");
+      }
       console.error("Password update error:", err);
       setError("Failed to update password. Please try again.");
       setIsLoading(false);
