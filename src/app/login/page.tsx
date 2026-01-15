@@ -245,31 +245,10 @@ export default function LoginPage() {
           try {
             await unlock(userKeys, password, data.user.id);
           } catch (unlockError) {
-            // If unlock fails (e.g., after password reset), regenerate keys
-            // This is expected when the password has changed
-            console.warn("Could not unlock existing keys, regenerating...", unlockError);
-            try {
-              const newKeys = await generateKeys(password);
-              // Update the keys in the database
-              const { error: updateError } = await supabase
-                .from("user_keys")
-                .update({
-                  public_key: newKeys.publicKey,
-                  encrypted_private_key: newKeys.encryptedPrivateKey,
-                  key_salt: newKeys.keySalt,
-                })
-                .eq("user_id", data.user.id);
-
-              if (updateError) {
-                console.error("Failed to update encryption keys:", updateError);
-              } else {
-                // Unlock the new keys
-                await unlock(newKeys, password, data.user.id);
-              }
-            } catch (regenError) {
-              console.error("Failed to regenerate encryption keys:", regenError);
-              // Continue anyway - user can still use the app, just can't decrypt old data
-            }
+            // If unlock fails (e.g., after password reset), user will need to restore via recovery code
+            // This is expected when the password has changed - they can restore in Settings
+            console.warn("Could not unlock encryption keys:", unlockError);
+            // Continue to app - user can restore encrypted history in Settings > Encryption & Recovery
           }
         }
 
@@ -1403,6 +1382,36 @@ export default function LoginPage() {
               Enter your email and we&apos;ll send you a reset code.
             </p>
 
+            {/* Recovery code warning */}
+            <div
+              className="flex items-start gap-3 p-3 rounded-lg mb-4"
+              style={{
+                backgroundColor: "rgba(245, 158, 11, 0.1)",
+                border: "1px solid var(--warning)",
+              }}
+            >
+              <svg
+                className="w-5 h-5 flex-shrink-0 mt-0.5"
+                style={{ color: "var(--warning)" }}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                />
+              </svg>
+              <p
+                className="text-sm"
+                style={{ color: "var(--warning)" }}
+              >
+                If you have encrypted messages, you will need your <strong>Recovery Code</strong> after resetting your password.
+              </p>
+            </div>
+
             <div className="form-group">
               <label className="label" htmlFor="resetEmail">
                 Email Address
@@ -1519,6 +1528,36 @@ export default function LoginPage() {
             >
               Enter the code from your email and choose a new password.
             </p>
+
+            {/* Recovery code reminder */}
+            <div
+              className="flex items-start gap-3 p-3 rounded-lg mb-4"
+              style={{
+                backgroundColor: "rgba(59, 130, 246, 0.1)",
+                border: "1px solid var(--accent-primary)",
+              }}
+            >
+              <svg
+                className="w-5 h-5 flex-shrink-0 mt-0.5"
+                style={{ color: "var(--accent-primary)" }}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              <p
+                className="text-sm"
+                style={{ color: "var(--accent-primary)" }}
+              >
+                After resetting, you may need your <strong>Recovery Code</strong> to restore encrypted messages. Find it in Settings.
+              </p>
+            </div>
 
             <div className="form-group">
               <label className="label" htmlFor="resetEmailField">

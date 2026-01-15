@@ -341,5 +341,51 @@ CREATE POLICY "Users can delete own keys" ON public.user_keys
   FOR DELETE USING (auth.uid() = user_id);
 
 -- =============================================================================
+-- 6. E2EE DEK (Data Encryption Key) ENVELOPE ENCRYPTION
+-- =============================================================================
+
+-- Table to store wrapped DEKs and recovery information
+-- DEK is encrypted (wrapped) by both password-derived and recovery-code-derived keys
+CREATE TABLE IF NOT EXISTS public.user_e2ee_keys (
+  user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  version INTEGER DEFAULT 1,
+  -- DEK wrapped with password-derived KEK
+  wrapped_dek_password TEXT NOT NULL,
+  password_kdf_salt TEXT NOT NULL,
+  -- DEK wrapped with recovery-code-derived KEK (nullable until recovery is set up)
+  wrapped_dek_recovery TEXT,
+  recovery_kdf_salt TEXT,
+  -- Recovery code encrypted with password KEK (so user can view it in settings)
+  encrypted_recovery_code TEXT,
+  -- Migration state: legacy (old password-derived), migrating, upgraded (DEK-based)
+  migration_state TEXT DEFAULT 'legacy' CHECK (migration_state IN ('legacy', 'migrating', 'upgraded')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Enable RLS
+ALTER TABLE public.user_e2ee_keys ENABLE ROW LEVEL SECURITY;
+
+-- RLS policies: users can only access their own row
+DROP POLICY IF EXISTS "Users can view own e2ee keys" ON public.user_e2ee_keys;
+CREATE POLICY "Users can view own e2ee keys" ON public.user_e2ee_keys
+  FOR SELECT USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can insert own e2ee keys" ON public.user_e2ee_keys;
+CREATE POLICY "Users can insert own e2ee keys" ON public.user_e2ee_keys
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can update own e2ee keys" ON public.user_e2ee_keys;
+CREATE POLICY "Users can update own e2ee keys" ON public.user_e2ee_keys
+  FOR UPDATE USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can delete own e2ee keys" ON public.user_e2ee_keys;
+CREATE POLICY "Users can delete own e2ee keys" ON public.user_e2ee_keys
+  FOR DELETE USING (auth.uid() = user_id);
+
+-- Index for faster lookups
+CREATE INDEX IF NOT EXISTS idx_user_e2ee_keys_migration_state ON public.user_e2ee_keys(migration_state);
+
+-- =============================================================================
 -- DONE! All new tables and functions are now set up.
 -- =============================================================================

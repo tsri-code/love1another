@@ -16,6 +16,9 @@ import {
 import { useNotifications } from "@/lib/use-notifications";
 import { PWAInstructions } from "@/components/PWAInstructions";
 import { PasswordInput } from "@/components/PasswordInput";
+import { useCrypto } from "@/lib/use-crypto";
+import { ViewRecoveryCode, RecoveryRestore } from "@/components/RecoverySetup";
+import { E2EEKeys } from "@/lib/dek-crypto";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -60,6 +63,113 @@ export default function SettingsPage() {
   const [avatarPath, setAvatarPath] = useState<string | null>(null);
   const [imageToCrop, setImageToCrop] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Encryption state
+  const { getRecoveryCode } = useCrypto();
+  const [showViewRecoveryCode, setShowViewRecoveryCode] = useState(false);
+  const [recoveryCodeToView, setRecoveryCodeToView] = useState<string | null>(null);
+  const [showRestoreEncryption, setShowRestoreEncryption] = useState(false);
+  const [encryptionPasswordInput, setEncryptionPasswordInput] = useState("");
+  const [encryptionOtpSent, setEncryptionOtpSent] = useState(false);
+  const [encryptionOtp, setEncryptionOtp] = useState("");
+  const [encryptionError, setEncryptionError] = useState("");
+  const [e2eeKeys, setE2eeKeys] = useState<E2EEKeys | null>(null);
+
+  // Load E2EE keys
+  useEffect(() => {
+    const loadE2eeKeys = async () => {
+      if (!user) return;
+      try {
+        const supabase = createClient();
+        const { data } = await supabase
+          .from("user_e2ee_keys")
+          .select("*")
+          .eq("user_id", user.id)
+          .single();
+
+        if (data) {
+          setE2eeKeys({
+            userId: data.user_id,
+            version: data.version,
+            wrappedDekPassword: data.wrapped_dek_password,
+            passwordKdfSalt: data.password_kdf_salt,
+            wrappedDekRecovery: data.wrapped_dek_recovery,
+            recoveryKdfSalt: data.recovery_kdf_salt,
+            encryptedRecoveryCode: data.encrypted_recovery_code,
+            migrationState: data.migration_state,
+          });
+        }
+      } catch {
+        // Keys not set up yet
+      }
+    };
+    loadE2eeKeys();
+  }, [user]);
+
+  // Handle view recovery code (step-up verification)
+  const handleViewRecoveryCode = async () => {
+    setEncryptionError("");
+
+    if (!encryptionOtpSent) {
+      // Step 1: Verify password and send OTP
+      try {
+        const supabase = createClient();
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email: user?.email || "",
+          password: encryptionPasswordInput,
+        });
+
+        if (signInError) {
+          setEncryptionError("Incorrect password");
+          return;
+        }
+
+        // Send OTP
+        const { error: otpError } = await supabase.auth.signInWithOtp({
+          email: user?.email || "",
+        });
+
+        if (otpError) {
+          setEncryptionError("Failed to send verification code");
+          return;
+        }
+
+        setEncryptionOtpSent(true);
+        showToast("Verification code sent to your email", "success");
+      } catch {
+        setEncryptionError("An error occurred");
+      }
+    } else {
+      // Step 2: Verify OTP and show recovery code
+      try {
+        const supabase = createClient();
+        const { error: verifyError } = await supabase.auth.verifyOtp({
+          email: user?.email || "",
+          token: encryptionOtp,
+          type: "email",
+        });
+
+        if (verifyError) {
+          setEncryptionError("Invalid or expired code");
+          return;
+        }
+
+        // Decrypt and show recovery code
+        if (e2eeKeys) {
+          const code = await getRecoveryCode(e2eeKeys, encryptionPasswordInput);
+          setRecoveryCodeToView(code);
+          setShowViewRecoveryCode(true);
+        }
+
+        // Reset state
+        setEncryptionPasswordInput("");
+        setEncryptionOtp("");
+        setEncryptionOtpSent(false);
+      } catch {
+        setEncryptionError("Failed to verify code");
+      }
+    }
+  };
 
   // Initialize form with user data
   useEffect(() => {
@@ -745,6 +855,213 @@ export default function SettingsPage() {
                 </p>
               )}
             </div>
+
+            {/* Encryption & Recovery Section */}
+            <div className="card" style={{ marginBottom: "var(--space-lg)" }}>
+              <div
+                className="flex items-center justify-between"
+                style={{ marginBottom: "var(--space-md)" }}
+              >
+                <h2
+                  className="font-serif font-semibold text-[var(--text-primary)]"
+                  style={{ fontSize: "var(--text-lg)" }}
+                >
+                  Encryption & Recovery
+                </h2>
+              </div>
+
+              <p
+                className="text-[var(--text-secondary)]"
+                style={{
+                  fontSize: "var(--text-sm)",
+                  marginBottom: "var(--space-md)",
+                  lineHeight: "var(--leading-relaxed)",
+                }}
+              >
+                Your messages and prayers are end-to-end encrypted. Only you can read them.
+                Your recovery code lets you restore access after a password reset.
+              </p>
+
+              {/* Status */}
+              <div
+                className="flex items-center gap-2 mb-4 p-3 rounded-lg"
+                style={{ backgroundColor: "var(--surface-elevated)" }}
+              >
+                <div
+                  className="w-3 h-3 rounded-full"
+                  style={{
+                    backgroundColor:
+                      e2eeKeys?.migrationState === "upgraded"
+                        ? "var(--success)"
+                        : e2eeKeys
+                        ? "var(--warning)"
+                        : "var(--text-muted)",
+                  }}
+                />
+                <span style={{ fontSize: "var(--text-sm)" }}>
+                  {e2eeKeys?.migrationState === "upgraded"
+                    ? "Encryption active, recovery code set"
+                    : e2eeKeys
+                    ? "Encryption active, recovery not set"
+                    : "Encryption not set up"}
+                </span>
+              </div>
+
+              {/* View Recovery Code Button */}
+              {e2eeKeys?.encryptedRecoveryCode && (
+                <div style={{ marginBottom: "var(--space-md)" }}>
+                  <button
+                    className="btn btn-secondary w-full"
+                    onClick={() => setShowViewRecoveryCode(true)}
+                  >
+                    <svg
+                      className="w-5 h-5 mr-2"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                      />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                      />
+                    </svg>
+                    View Recovery Code
+                  </button>
+                </div>
+              )}
+
+              {/* Restore Encrypted History Button */}
+              <button
+                className="btn btn-ghost w-full text-[var(--text-secondary)]"
+                onClick={() => setShowRestoreEncryption(true)}
+                style={{ fontSize: "var(--text-sm)" }}
+              >
+                Restore encrypted history on this device
+              </button>
+            </div>
+
+            {/* View Recovery Code Modal */}
+            {showViewRecoveryCode && !recoveryCodeToView && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                <div
+                  className="w-full max-w-md rounded-2xl p-6"
+                  style={{
+                    backgroundColor: "var(--surface-card)",
+                    boxShadow: "var(--shadow-lg)",
+                  }}
+                >
+                  <h3
+                    className="text-lg font-semibold mb-4"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    {encryptionOtpSent ? "Enter Verification Code" : "Verify Your Identity"}
+                  </h3>
+
+                  {!encryptionOtpSent ? (
+                    <>
+                      <p
+                        className="text-sm mb-4"
+                        style={{ color: "var(--text-secondary)" }}
+                      >
+                        Enter your password to continue. We will send a verification code to your email.
+                      </p>
+                      <PasswordInput
+                        className="input mb-4"
+                        placeholder="Enter your password"
+                        value={encryptionPasswordInput}
+                        onChange={(e) => setEncryptionPasswordInput(e.target.value)}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <p
+                        className="text-sm mb-4"
+                        style={{ color: "var(--text-secondary)" }}
+                      >
+                        Enter the 6-digit code sent to {user?.email}
+                      </p>
+                      <input
+                        type="text"
+                        className="input mb-4 text-center"
+                        placeholder="000000"
+                        value={encryptionOtp}
+                        onChange={(e) => setEncryptionOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                        maxLength={6}
+                      />
+                    </>
+                  )}
+
+                  {encryptionError && (
+                    <Alert variant="destructive" icon={<AlertCircleIcon />} className="mb-4">
+                      <AlertTitle>{encryptionError}</AlertTitle>
+                    </Alert>
+                  )}
+
+                  <div className="flex gap-3">
+                    <button
+                      className="flex-1 btn btn-ghost"
+                      onClick={() => {
+                        setShowViewRecoveryCode(false);
+                        setEncryptionPasswordInput("");
+                        setEncryptionOtp("");
+                        setEncryptionOtpSent(false);
+                        setEncryptionError("");
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="flex-1 btn btn-primary"
+                      onClick={handleViewRecoveryCode}
+                      disabled={encryptionOtpSent ? encryptionOtp.length !== 6 : !encryptionPasswordInput}
+                    >
+                      {encryptionOtpSent ? "Verify" : "Continue"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* View Recovery Code Display */}
+            {recoveryCodeToView && (
+              <ViewRecoveryCode
+                recoveryCode={recoveryCodeToView}
+                onClose={() => {
+                  setRecoveryCodeToView(null);
+                  setShowViewRecoveryCode(false);
+                }}
+              />
+            )}
+
+            {/* Restore Encryption Modal */}
+            {showRestoreEncryption && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                <div
+                  className="w-full max-w-md rounded-2xl"
+                  style={{
+                    backgroundColor: "var(--surface-card)",
+                    boxShadow: "var(--shadow-lg)",
+                  }}
+                >
+                  <RecoveryRestore
+                    onRestore={async (code) => {
+                      // This would be implemented when we have the full restore logic
+                      showToast("Recovery feature coming soon", "info");
+                      console.log("Restore with code:", code);
+                    }}
+                    onSkip={() => setShowRestoreEncryption(false)}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Friends Section */}
             <div className="card" style={{ marginBottom: "var(--space-lg)" }}>

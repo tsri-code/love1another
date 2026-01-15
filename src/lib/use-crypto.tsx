@@ -5,7 +5,6 @@ import {
   useContext,
   useState,
   useCallback,
-  useEffect,
   ReactNode,
 } from "react";
 import {
@@ -27,7 +26,19 @@ import {
   isUserUnlocked,
   reEncryptPrivateKey,
   checkCryptoSupport,
+  storeDEK,
 } from "./e2e-crypto";
+import {
+  E2EEKeys,
+  setupEnvelopeEncryption,
+  unwrapDEK,
+  restoreWithRecoveryCode,
+  rewrapDEKWithNewPassword,
+  decryptRecoveryCode,
+  storeDEKInSession,
+  clearStoredDEK,
+  importDEK,
+} from "./dek-crypto";
 
 // ============================================================================
 // Types
@@ -39,6 +50,8 @@ interface CryptoContextType {
   isLoading: boolean;
   cryptoSupported: boolean;
   missingFeatures: string[];
+  migrationState: "unknown" | "legacy" | "migrating" | "upgraded" | "needs_recovery";
+  needsRecoverySetup: boolean;
 
   // Key Management
   generateKeys: (password: string) => Promise<UserKeyPair>;
@@ -99,6 +112,37 @@ interface CryptoContextType {
     ivBase64: string,
     userId: string
   ) => Promise<object>;
+
+  // DEK / Envelope Encryption (e2ee_v2)
+  setupEnvelope: (
+    password: string,
+    userId: string
+  ) => Promise<{
+    recoveryCode: string;
+    e2eeKeys: Omit<E2EEKeys, "userId">;
+  }>;
+  unlockWithDEK: (
+    e2eeKeys: E2EEKeys,
+    password: string,
+    userId: string
+  ) => Promise<boolean>;
+  restoreWithRecovery: (
+    e2eeKeys: E2EEKeys,
+    recoveryCode: string,
+    newPassword: string,
+    userId: string
+  ) => Promise<Omit<E2EEKeys, "userId">>;
+  getRecoveryCode: (
+    e2eeKeys: E2EEKeys,
+    password: string
+  ) => Promise<string>;
+  changePasswordWithDEK: (
+    e2eeKeys: E2EEKeys,
+    oldPassword: string,
+    newPassword: string
+  ) => Promise<Omit<E2EEKeys, "userId">>;
+  setMigrationState: (state: "unknown" | "legacy" | "migrating" | "upgraded" | "needs_recovery") => void;
+  setNeedsRecoverySetup: (needs: boolean) => void;
 }
 
 // ============================================================================
@@ -115,19 +159,18 @@ interface CryptoProviderProps {
  * Provider component for E2E encryption functionality
  * Wrap your app with this to enable encryption features
  */
+// Check crypto support once at module load time (safe, no side effects)
+const cryptoCheck = typeof window !== "undefined" ? checkCryptoSupport() : { supported: true, missing: [] as string[] };
+
 export function CryptoProvider({ children }: CryptoProviderProps) {
   const [isUnlocked, setIsUnlocked] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [cryptoSupported, setCryptoSupported] = useState(true);
-  const [missingFeatures, setMissingFeatures] = useState<string[]>([]);
-
-  // Check crypto support on mount
-  useEffect(() => {
-    const check = checkCryptoSupport();
-    setCryptoSupported(check.supported);
-    setMissingFeatures(check.missing);
-    setIsLoading(false);
-  }, []);
+  const [isLoading] = useState(false);
+  const [cryptoSupported] = useState(cryptoCheck.supported);
+  const [missingFeatures] = useState<string[]>(cryptoCheck.missing);
+  const [migrationState, setMigrationState] = useState<
+    "unknown" | "legacy" | "migrating" | "upgraded" | "needs_recovery"
+  >("unknown");
+  const [needsRecoverySetup, setNeedsRecoverySetup] = useState(false);
 
   // Generate keys for a new user
   const generateKeys = useCallback(
@@ -161,7 +204,10 @@ export function CryptoProvider({ children }: CryptoProviderProps) {
   // Lock keys on logout
   const lock = useCallback(async (): Promise<void> => {
     await lockUserKeys();
+    await clearStoredDEK();
     setIsUnlocked(false);
+    setMigrationState("unknown");
+    setNeedsRecoverySetup(false);
   }, []);
 
   // Get decrypted key pair
@@ -286,11 +332,206 @@ export function CryptoProvider({ children }: CryptoProviderProps) {
     []
   );
 
+  // ============================================================================
+  // DEK / Envelope Encryption Methods (e2ee_v2)
+  // ============================================================================
+
+  // Set up envelope encryption for a user (generates DEK, recovery code, wrappers)
+  const setupEnvelope = useCallback(
+    async (
+      password: string,
+      userId: string
+    ): Promise<{
+      recoveryCode: string;
+      e2eeKeys: Omit<E2EEKeys, "userId">;
+    }> => {
+      if (!cryptoSupported) {
+        throw new Error("Encryption is not supported in this browser");
+      }
+
+      const result = await setupEnvelopeEncryption(password);
+
+      // Store DEK in session
+      await storeDEKInSession(userId, result.dek);
+      
+      // Also store as CryptoKey for e2e-crypto functions
+      const dekKey = await importDEK(result.dek);
+      await storeDEK(userId, dekKey);
+
+      setMigrationState("upgraded");
+      setNeedsRecoverySetup(false);
+      setIsUnlocked(true);
+
+      return {
+        recoveryCode: result.recoveryCode,
+        e2eeKeys: {
+          version: 1,
+          wrappedDekPassword: result.wrappedDekPassword.wrappedDek,
+          passwordKdfSalt: result.wrappedDekPassword.kdfSalt,
+          wrappedDekRecovery: result.wrappedDekRecovery.wrappedDek,
+          recoveryKdfSalt: result.wrappedDekRecovery.kdfSalt,
+          encryptedRecoveryCode: result.encryptedRecoveryCode,
+          migrationState: "upgraded",
+        },
+      };
+    },
+    [cryptoSupported]
+  );
+
+  // Unlock using DEK (for upgraded users)
+  const unlockWithDEK = useCallback(
+    async (
+      e2eeKeys: E2EEKeys,
+      password: string,
+      userId: string
+    ): Promise<boolean> => {
+      if (!cryptoSupported) {
+        throw new Error("Encryption is not supported in this browser");
+      }
+
+      try {
+        // Unwrap DEK using password
+        const dek = await unwrapDEK(
+          e2eeKeys.wrappedDekPassword,
+          e2eeKeys.passwordKdfSalt,
+          password,
+          false
+        );
+
+        // Store DEK in session
+        await storeDEKInSession(userId, dek);
+        
+        // Also store as CryptoKey for e2e-crypto functions
+        const dekKey = await importDEK(dek);
+        await storeDEK(userId, dekKey);
+
+        setMigrationState(e2eeKeys.migrationState);
+        setIsUnlocked(true);
+        return true;
+      } catch (error) {
+        console.error("Failed to unlock with DEK:", error);
+        return false;
+      }
+    },
+    [cryptoSupported]
+  );
+
+  // Restore access after password reset using recovery code
+  const restoreWithRecovery = useCallback(
+    async (
+      e2eeKeys: E2EEKeys,
+      recoveryCode: string,
+      newPassword: string,
+      userId: string
+    ): Promise<Omit<E2EEKeys, "userId">> => {
+      if (!cryptoSupported) {
+        throw new Error("Encryption is not supported in this browser");
+      }
+
+      if (!e2eeKeys.wrappedDekRecovery || !e2eeKeys.recoveryKdfSalt) {
+        throw new Error("Recovery not set up for this account");
+      }
+
+      const result = await restoreWithRecoveryCode(
+        e2eeKeys.wrappedDekRecovery,
+        e2eeKeys.recoveryKdfSalt,
+        recoveryCode,
+        newPassword
+      );
+
+      // Store DEK in session
+      await storeDEKInSession(userId, result.dek);
+      
+      // Also store as CryptoKey for e2e-crypto functions
+      const dekKey = await importDEK(result.dek);
+      await storeDEK(userId, dekKey);
+
+      setMigrationState("upgraded");
+      setIsUnlocked(true);
+
+      return {
+        version: e2eeKeys.version,
+        wrappedDekPassword: result.wrappedDekPassword.wrappedDek,
+        passwordKdfSalt: result.wrappedDekPassword.kdfSalt,
+        wrappedDekRecovery: e2eeKeys.wrappedDekRecovery,
+        recoveryKdfSalt: e2eeKeys.recoveryKdfSalt,
+        encryptedRecoveryCode: result.encryptedRecoveryCode,
+        migrationState: "upgraded",
+      };
+    },
+    [cryptoSupported]
+  );
+
+  // Get the recovery code (requires password)
+  const getRecoveryCode = useCallback(
+    async (e2eeKeys: E2EEKeys, password: string): Promise<string> => {
+      if (!e2eeKeys.encryptedRecoveryCode) {
+        throw new Error("Recovery code not available");
+      }
+
+      return decryptRecoveryCode(
+        e2eeKeys.encryptedRecoveryCode,
+        password,
+        e2eeKeys.passwordKdfSalt
+      );
+    },
+    []
+  );
+
+  // Change password with DEK (re-wrap DEK, re-encrypt recovery code)
+  const changePasswordWithDEK = useCallback(
+    async (
+      e2eeKeys: E2EEKeys,
+      oldPassword: string,
+      newPassword: string
+    ): Promise<Omit<E2EEKeys, "userId">> => {
+      if (!cryptoSupported) {
+        throw new Error("Encryption is not supported in this browser");
+      }
+
+      // First, unwrap the DEK with old password
+      const dek = await unwrapDEK(
+        e2eeKeys.wrappedDekPassword,
+        e2eeKeys.passwordKdfSalt,
+        oldPassword,
+        false
+      );
+
+      // Get the recovery code
+      let recoveryCode: string;
+      if (e2eeKeys.encryptedRecoveryCode) {
+        recoveryCode = await decryptRecoveryCode(
+          e2eeKeys.encryptedRecoveryCode,
+          oldPassword,
+          e2eeKeys.passwordKdfSalt
+        );
+      } else {
+        throw new Error("Recovery code not available for password change");
+      }
+
+      // Re-wrap DEK and re-encrypt recovery code with new password
+      const result = await rewrapDEKWithNewPassword(dek, recoveryCode, newPassword);
+
+      return {
+        version: e2eeKeys.version,
+        wrappedDekPassword: result.wrappedDekPassword.wrappedDek,
+        passwordKdfSalt: result.wrappedDekPassword.kdfSalt,
+        wrappedDekRecovery: e2eeKeys.wrappedDekRecovery,
+        recoveryKdfSalt: e2eeKeys.recoveryKdfSalt,
+        encryptedRecoveryCode: result.encryptedRecoveryCode,
+        migrationState: e2eeKeys.migrationState,
+      };
+    },
+    [cryptoSupported]
+  );
+
   const value: CryptoContextType = {
     isUnlocked,
     isLoading,
     cryptoSupported,
     missingFeatures,
+    migrationState,
+    needsRecoverySetup,
     generateKeys,
     unlock,
     lock,
@@ -305,6 +546,14 @@ export function CryptoProvider({ children }: CryptoProviderProps) {
     decryptPrayerData,
     encryptPrayers: encryptPrayersWithKey,
     decryptPrayers: decryptPrayersWithKey,
+    // DEK / Envelope Encryption
+    setupEnvelope,
+    unlockWithDEK,
+    restoreWithRecovery,
+    getRecoveryCode,
+    changePasswordWithDEK,
+    setMigrationState,
+    setNeedsRecoverySetup,
   };
 
   return (

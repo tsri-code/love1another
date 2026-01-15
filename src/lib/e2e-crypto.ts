@@ -38,6 +38,7 @@ const STORE_NAME = "keys";
 export interface EncryptedData {
   ciphertext: string; // Base64 encoded
   iv: string; // Base64 encoded
+  version?: "legacy_v1" | "e2ee_v2"; // Encryption scheme version
 }
 
 export interface UserKeyPair {
@@ -801,5 +802,213 @@ export function checkCryptoSupport(): {
   return {
     supported: missing.length === 0,
     missing,
+  };
+}
+
+// ============================================================================
+// DEK-Based Encryption (e2ee_v2)
+// ============================================================================
+
+/**
+ * Store the DEK as a CryptoKey in IndexedDB for the session
+ */
+export async function storeDEK(userId: string, dekKey: CryptoKey): Promise<void> {
+  return storeKey(`dek_${userId}`, dekKey);
+}
+
+/**
+ * Get the stored DEK from IndexedDB
+ */
+export async function getStoredDEK(userId: string): Promise<CryptoKey | null> {
+  return getStoredKey(`dek_${userId}`);
+}
+
+/**
+ * Encrypt content using the DEK (e2ee_v2 scheme)
+ * 
+ * @param content - Content to encrypt
+ * @param userId - User ID to look up DEK
+ * @returns Encrypted data with version tag
+ */
+export async function encryptWithDEK(
+  content: string,
+  userId: string
+): Promise<EncryptedData> {
+  const dek = await getStoredDEK(userId);
+  if (!dek) {
+    throw new Error("DEK not available. Please complete encryption setup.");
+  }
+
+  const encrypted = await encryptWithAES(content, dek);
+  return {
+    ...encrypted,
+    version: "e2ee_v2",
+  };
+}
+
+/**
+ * Decrypt content using the DEK (e2ee_v2 scheme)
+ * 
+ * @param encrypted - Encrypted data
+ * @param userId - User ID to look up DEK
+ * @returns Decrypted content
+ */
+export async function decryptWithDEK(
+  encrypted: EncryptedData,
+  userId: string
+): Promise<string> {
+  const dek = await getStoredDEK(userId);
+  if (!dek) {
+    throw new Error("DEK not available. Please complete encryption setup.");
+  }
+
+  return decryptWithAES(encrypted, dek);
+}
+
+/**
+ * Encrypt prayers using DEK (e2ee_v2 scheme)
+ * No salt needed since we use the same DEK
+ * 
+ * @param prayers - Prayer data object
+ * @param userId - User ID to look up DEK
+ * @returns Encrypted data with IV and version
+ */
+export async function encryptPrayersWithDEK(
+  prayers: object,
+  userId: string
+): Promise<{ encrypted: string; iv: string; version: "e2ee_v2" }> {
+  const plaintext = JSON.stringify(prayers);
+  const encrypted = await encryptWithDEK(plaintext, userId);
+
+  return {
+    encrypted: encrypted.ciphertext,
+    iv: encrypted.iv,
+    version: "e2ee_v2",
+  };
+}
+
+/**
+ * Decrypt prayers using DEK (e2ee_v2 scheme)
+ * 
+ * @param encryptedBase64 - Encrypted prayer data
+ * @param ivBase64 - Initialization vector
+ * @param userId - User ID to look up DEK
+ * @returns Decrypted prayer data
+ */
+export async function decryptPrayersWithDEK(
+  encryptedBase64: string,
+  ivBase64: string,
+  userId: string
+): Promise<object> {
+  const encrypted: EncryptedData = {
+    ciphertext: encryptedBase64,
+    iv: ivBase64,
+    version: "e2ee_v2",
+  };
+
+  const plaintext = await decryptWithDEK(encrypted, userId);
+  return JSON.parse(plaintext);
+}
+
+/**
+ * Try to decrypt prayers, handling both legacy and e2ee_v2 schemes
+ * 
+ * @param encryptedBase64 - Encrypted prayer data
+ * @param ivBase64 - Initialization vector
+ * @param saltBase64 - Salt (only used for legacy scheme)
+ * @param userId - User ID
+ * @param version - Encryption version (optional, will try to detect)
+ * @returns Decrypted prayer data
+ */
+export async function decryptPrayersAuto(
+  encryptedBase64: string,
+  ivBase64: string,
+  saltBase64: string | null,
+  userId: string,
+  version?: "legacy_v1" | "e2ee_v2"
+): Promise<object> {
+  // If version is specified as e2ee_v2, use DEK
+  if (version === "e2ee_v2") {
+    return decryptPrayersWithDEK(encryptedBase64, ivBase64, userId);
+  }
+
+  // If version is legacy_v1 or we have a salt, try legacy first
+  if (version === "legacy_v1" || saltBase64) {
+    // Try DEK first (in case user is migrated but data has old version tag)
+    const dek = await getStoredDEK(userId);
+    if (dek) {
+      try {
+        return await decryptPrayersWithDEK(encryptedBase64, ivBase64, userId);
+      } catch {
+        // Fall through to legacy
+      }
+    }
+
+    // Try legacy with cached prayer key
+    const prayerKey = await getStoredPrayerKey(userId);
+    if (prayerKey) {
+      try {
+        const encrypted: EncryptedData = {
+          ciphertext: encryptedBase64,
+          iv: ivBase64,
+        };
+        const plaintext = await decryptWithAES(encrypted, prayerKey);
+        return JSON.parse(plaintext);
+      } catch {
+        throw new Error("Failed to decrypt prayers. Keys may have changed.");
+      }
+    }
+
+    throw new Error("No decryption keys available. Please log in again.");
+  }
+
+  // No version specified and no salt - try DEK first, then legacy
+  const dek = await getStoredDEK(userId);
+  if (dek) {
+    try {
+      return await decryptPrayersWithDEK(encryptedBase64, ivBase64, userId);
+    } catch {
+      // Fall through to legacy
+    }
+  }
+
+  const prayerKey = await getStoredPrayerKey(userId);
+  if (prayerKey) {
+    const encrypted: EncryptedData = {
+      ciphertext: encryptedBase64,
+      iv: ivBase64,
+    };
+    const plaintext = await decryptWithAES(encrypted, prayerKey);
+    return JSON.parse(plaintext);
+  }
+
+  throw new Error("No decryption keys available. Please log in again.");
+}
+
+/**
+ * Check if user has DEK-based encryption set up
+ */
+export async function hasDEKSetup(userId: string): Promise<boolean> {
+  const dek = await getStoredDEK(userId);
+  return dek !== null;
+}
+
+/**
+ * Generate keys for a new user with envelope encryption (e2ee_v2)
+ * This is the new signup flow that uses DEK
+ */
+export async function generateUserKeysV2(password: string): Promise<{
+  legacy: UserKeyPair;
+  dek: Uint8Array;
+}> {
+  // Generate legacy keys for backward compatibility with conversation encryption
+  const legacyKeys = await generateUserKeys(password);
+
+  // Generate DEK for content encryption
+  const dek = crypto.getRandomValues(new Uint8Array(32));
+
+  return {
+    legacy: legacyKeys,
+    dek,
   };
 }
