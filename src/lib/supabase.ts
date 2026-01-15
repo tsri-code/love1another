@@ -1,3 +1,6 @@
+// CRITICAL: Import this FIRST to clear stale tokens before any client is created
+import './supabase-init';
+
 import { createBrowserClient } from '@supabase/ssr';
 
 // Environment variables
@@ -17,6 +20,20 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
  * add back: createBrowserClient<Database>(...)
  */
 export function createClient() {
+  // CRITICAL: Clear any stale cookies before creating client
+  // This prevents Supabase from trying to restore invalid sessions
+  if (typeof document !== 'undefined') {
+    const cookies = document.cookie.split(';');
+    for (const cookie of cookies) {
+      const [name] = cookie.trim().split('=');
+      if (name && (name.startsWith('sb-') || name.includes('supabase'))) {
+        // Clear cookie by setting it to expire in the past
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
+      }
+    }
+  }
+
   return createBrowserClient(supabaseUrl, supabaseAnonKey, {
     auth: {
       // CRITICAL: Disable automatic token refresh to prevent infinite loops

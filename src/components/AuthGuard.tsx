@@ -104,6 +104,19 @@ export function AuthGuard({ children }: AuthGuardProps) {
   const router = useRouter();
   const pathname = usePathname();
 
+  // CRITICAL: Clear stale storage IMMEDIATELY on mount, before Supabase client is created
+  // This prevents Supabase from trying to restore invalid sessions
+  useMemo(() => {
+    if (typeof window !== "undefined") {
+      // Check if there's a flag indicating we should clear storage
+      const shouldClear = sessionStorage.getItem("clearAuthStorage");
+      if (shouldClear === "true") {
+        clearAllAuthStorage();
+        sessionStorage.removeItem("clearAuthStorage");
+      }
+    }
+  }, []);
+
   // Memoize the Supabase client to prevent recreation on every render
   const supabase = useMemo(() => createClient(), []);
 
@@ -161,6 +174,10 @@ export function AuthGuard({ children }: AuthGuardProps) {
           console.warn("[Auth] Refresh failed:", refreshError.message);
           // Clear storage and sign out - refresh token is invalid
           clearAllAuthStorage();
+          // Set flag to clear on next page load too
+          if (typeof window !== "undefined") {
+            sessionStorage.setItem("clearAuthStorage", "true");
+          }
           try {
             await supabase.auth.signOut({ scope: "local" });
           } catch {
@@ -187,6 +204,10 @@ export function AuthGuard({ children }: AuthGuardProps) {
         console.warn("[Auth] User verification failed:", userError.message);
         // If user verification fails, the session is invalid
         clearAllAuthStorage();
+        // Set flag to clear on next page load too
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem("clearAuthStorage", "true");
+        }
         try {
           await supabase.auth.signOut({ scope: "local" });
         } catch {
