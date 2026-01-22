@@ -32,20 +32,21 @@ export async function GET(request: NextRequest) {
       .from("user_e2ee_keys")
       .select("*")
       .eq("user_id", user.id)
-      .single();
+      .maybeSingle(); // Use maybeSingle to handle 0 rows gracefully
 
     if (error) {
-      if (error.code === "PGRST116") {
-        // No rows returned - user doesn't have E2EE keys
-        return NextResponse.json(
-          { error: "Not found" },
-          { status: 404 }
-        );
-      }
       console.error("[E2EE Keys] Fetch error:", error);
       return NextResponse.json(
         { error: "Failed to fetch E2EE keys" },
         { status: 500 }
+      );
+    }
+
+    if (!data) {
+      // No E2EE keys record - user hasn't set up encryption
+      return NextResponse.json(
+        { error: "Not found" },
+        { status: 404 }
       );
     }
 

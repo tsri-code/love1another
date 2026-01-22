@@ -246,28 +246,38 @@ export default function LoginPage() {
           }
         }
 
+        // Check if user needs migration to new encryption system
+        const needsMigration = await checkNeedsMigration(data.user.id);
+
         // Unlock encryption keys
         const userKeys = await fetchUserKeys(data.user.id);
+        let unlockSucceeded = false;
+
         if (userKeys) {
           try {
             await unlock(userKeys, password, data.user.id);
-            
-            // Check if user needs migration to new encryption system
-            const needsMigration = await checkNeedsMigration(data.user.id);
-            if (needsMigration) {
-              // Show migration modal instead of redirecting
-              setMigrationUserId(data.user.id);
-              setMigrationPassword(password);
-              setShowMigration(true);
-              setIsLoading(false);
-              return; // Don't redirect yet - wait for migration to complete
-            }
+            unlockSucceeded = true;
           } catch (unlockError) {
-            // If unlock fails (e.g., after password reset), user will need to restore via recovery code
-            // This is expected when the password has changed - they can restore in Settings
+            // If unlock fails (e.g., after password reset), we'll handle it below
             console.warn("Could not unlock encryption keys:", unlockError);
-            // Continue to app - user can restore encrypted history in Settings > Encryption & Recovery
           }
+        }
+
+        // If migration is needed and unlock succeeded, show migration flow
+        // The migration will re-encrypt existing data with new DEK
+        if (needsMigration && unlockSucceeded) {
+          setMigrationUserId(data.user.id);
+          setMigrationPassword(password);
+          setShowMigration(true);
+          setIsLoading(false);
+          return; // Don't redirect yet - wait for migration to complete
+        }
+
+        // If migration is needed but unlock failed (or no keys), user needs fresh start
+        // They'll set up new encryption in Settings, but old data is inaccessible
+        if (needsMigration && !unlockSucceeded) {
+          console.warn("User needs encryption setup but legacy keys unavailable");
+          // Continue to app - they'll be prompted in Settings
         }
 
         // Redirect to home
@@ -758,10 +768,15 @@ export default function LoginPage() {
       .from("user_keys")
       .select("public_key, encrypted_private_key, key_salt")
       .eq("user_id", userId)
-      .single();
+      .maybeSingle(); // Use maybeSingle to handle 0 rows gracefully
 
-    if (error || !data) {
+    if (error) {
       console.warn("Could not fetch user keys:", error);
+      return null;
+    }
+
+    if (!data) {
+      // No keys exist for this user - they're a new user or keys were deleted
       return null;
     }
 

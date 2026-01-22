@@ -81,11 +81,16 @@ export default function SettingsPage() {
       if (!user) return;
       try {
         const supabase = createClient();
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from("user_e2ee_keys")
           .select("*")
           .eq("user_id", user.id)
-          .single();
+          .maybeSingle(); // Use maybeSingle to handle 0 rows gracefully
+
+        if (error) {
+          console.warn("Could not load E2EE keys:", error);
+          return;
+        }
 
         if (data) {
           setE2eeKeys({
@@ -857,10 +862,10 @@ export default function SettingsPage() {
             </div>
 
             {/* Encryption & Recovery Section */}
-            <div className="card" style={{ marginBottom: "var(--space-lg)" }}>
+            <div className="card" style={{ marginBottom: "var(--space-lg)", padding: "var(--space-lg)" }}>
               <div
                 className="flex items-center justify-between"
-                style={{ marginBottom: "var(--space-md)" }}
+                style={{ marginBottom: "var(--space-lg)" }}
               >
                 <h2
                   className="font-serif font-semibold text-[var(--text-primary)]"
@@ -874,7 +879,7 @@ export default function SettingsPage() {
                 className="text-[var(--text-secondary)]"
                 style={{
                   fontSize: "var(--text-sm)",
-                  marginBottom: "var(--space-md)",
+                  marginBottom: "var(--space-lg)",
                   lineHeight: "var(--leading-relaxed)",
                 }}
               >
@@ -884,11 +889,14 @@ export default function SettingsPage() {
 
               {/* Status */}
               <div
-                className="flex items-center gap-2 mb-4 p-3 rounded-lg"
-                style={{ backgroundColor: "var(--surface-elevated)" }}
+                className="flex items-center gap-3 p-4 rounded-lg"
+                style={{ 
+                  backgroundColor: "var(--surface-elevated)",
+                  marginBottom: "var(--space-lg)",
+                }}
               >
                 <div
-                  className="w-3 h-3 rounded-full"
+                  className="w-3 h-3 rounded-full flex-shrink-0"
                   style={{
                     backgroundColor:
                       e2eeKeys?.migrationState === "upgraded"
@@ -898,7 +906,7 @@ export default function SettingsPage() {
                         : "var(--text-muted)",
                   }}
                 />
-                <span style={{ fontSize: "var(--text-sm)" }}>
+                <span style={{ fontSize: "var(--text-sm)", color: "var(--text-primary)" }}>
                   {e2eeKeys?.migrationState === "upgraded"
                     ? "Encryption active, recovery code set"
                     : e2eeKeys
@@ -907,12 +915,14 @@ export default function SettingsPage() {
                 </span>
               </div>
 
-              {/* View Recovery Code Button */}
-              {e2eeKeys?.encryptedRecoveryCode && (
-                <div style={{ marginBottom: "var(--space-md)" }}>
+              {/* Buttons container with proper spacing */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-md)" }}>
+                {/* View Recovery Code Button */}
+                {e2eeKeys?.encryptedRecoveryCode && (
                   <button
                     className="btn btn-secondary w-full"
                     onClick={() => setShowViewRecoveryCode(true)}
+                    style={{ padding: "var(--space-md)" }}
                   >
                     <svg
                       className="w-5 h-5 mr-2"
@@ -935,17 +945,17 @@ export default function SettingsPage() {
                     </svg>
                     View Recovery Code
                   </button>
-                </div>
-              )}
+                )}
 
-              {/* Restore Encrypted History Button */}
-              <button
-                className="btn btn-ghost w-full text-[var(--text-secondary)]"
-                onClick={() => setShowRestoreEncryption(true)}
-                style={{ fontSize: "var(--text-sm)" }}
-              >
-                Restore encrypted history on this device
-              </button>
+                {/* Restore Encrypted History Button */}
+                <button
+                  className="btn btn-ghost w-full text-[var(--text-secondary)]"
+                  onClick={() => setShowRestoreEncryption(true)}
+                  style={{ fontSize: "var(--text-sm)", padding: "var(--space-md)" }}
+                >
+                  Restore encrypted history on this device
+                </button>
+              </div>
             </div>
 
             {/* View Recovery Code Modal */}

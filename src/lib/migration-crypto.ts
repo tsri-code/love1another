@@ -463,15 +463,16 @@ export async function checkNeedsMigration(userId: string): Promise<boolean> {
       .from("user_e2ee_keys")
       .select("migration_state")
       .eq("user_id", userId)
-      .single();
+      .maybeSingle(); // Use maybeSingle to handle 0 rows gracefully
 
     if (error) {
-      if (error.code === "PGRST116") {
-        // No rows - needs migration
-        return true;
-      }
       console.warn("[Migration] Could not check migration status:", error);
       return false; // Error - don't force migration
+    }
+
+    // No data means no E2EE keys record - needs migration
+    if (!data) {
+      return true;
     }
 
     return data.migration_state === "legacy" || !data.migration_state;
@@ -494,14 +495,15 @@ export async function getMigrationState(
       .from("user_e2ee_keys")
       .select("migration_state")
       .eq("user_id", userId)
-      .single();
+      .maybeSingle(); // Use maybeSingle to handle 0 rows gracefully
 
     if (error) {
-      if (error.code === "PGRST116") {
-        // No rows - legacy state
-        return "legacy";
-      }
       return null;
+    }
+
+    // No data means no E2EE keys record - legacy state
+    if (!data) {
+      return "legacy";
     }
 
     return (data.migration_state as "legacy" | "migrating" | "upgraded") || "legacy";
