@@ -10,14 +10,14 @@
 -- =============================================================================
 
 -- Add columns for group support
-ALTER TABLE public.conversations 
-  ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'direct' CHECK (type IN ('direct', 'group')),
+ALTER TABLE public.conversations
+  ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'private' CHECK (type IN ('private', 'group')),
   ADD COLUMN IF NOT EXISTS group_name TEXT,
   ADD COLUMN IF NOT EXISTS group_avatar_path TEXT,
   ADD COLUMN IF NOT EXISTS creator_id UUID;
 
 -- Make user1_id and user2_id nullable for group conversations
-ALTER TABLE public.conversations 
+ALTER TABLE public.conversations
   ALTER COLUMN user1_id DROP NOT NULL,
   ALTER COLUMN user2_id DROP NOT NULL;
 
@@ -35,9 +35,9 @@ CREATE TABLE IF NOT EXISTS public.conversation_members (
 );
 
 -- Create index for faster lookups
-CREATE INDEX IF NOT EXISTS idx_conversation_members_conversation 
+CREATE INDEX IF NOT EXISTS idx_conversation_members_conversation
   ON public.conversation_members(conversation_id);
-CREATE INDEX IF NOT EXISTS idx_conversation_members_user 
+CREATE INDEX IF NOT EXISTS idx_conversation_members_user
   ON public.conversation_members(user_id);
 
 -- =============================================================================
@@ -59,8 +59,8 @@ CREATE POLICY "Users can view members of their conversations"
   ON public.conversation_members FOR SELECT
   USING (
     EXISTS (
-      SELECT 1 FROM public.conversation_members cm 
-      WHERE cm.conversation_id = conversation_members.conversation_id 
+      SELECT 1 FROM public.conversation_members cm
+      WHERE cm.conversation_id = conversation_members.conversation_id
       AND cm.user_id = auth.uid()
     )
   );
@@ -71,8 +71,8 @@ CREATE POLICY "Admins can add members to groups"
   WITH CHECK (
     -- User is admin of the conversation
     EXISTS (
-      SELECT 1 FROM public.conversation_members cm 
-      WHERE cm.conversation_id = conversation_members.conversation_id 
+      SELECT 1 FROM public.conversation_members cm
+      WHERE cm.conversation_id = conversation_members.conversation_id
       AND cm.user_id = auth.uid()
       AND cm.role = 'admin'
     )
@@ -98,8 +98,8 @@ CREATE POLICY "Users can leave or admins can remove"
     user_id = auth.uid()
     -- OR user is admin removing someone else
     OR EXISTS (
-      SELECT 1 FROM public.conversation_members cm 
-      WHERE cm.conversation_id = conversation_members.conversation_id 
+      SELECT 1 FROM public.conversation_members cm
+      WHERE cm.conversation_id = conversation_members.conversation_id
       AND cm.user_id = auth.uid()
       AND cm.role = 'admin'
     )
@@ -115,16 +115,16 @@ DROP POLICY IF EXISTS "Users can create conversations" ON public.conversations;
 DROP POLICY IF EXISTS "Users can update their conversations" ON public.conversations;
 DROP POLICY IF EXISTS "Users can delete their conversations" ON public.conversations;
 
--- View: Users can see direct conversations they're part of, or group conversations they're members of
+-- View: Users can see private conversations they're part of, or group conversations they're members of
 CREATE POLICY "Users can view their conversations"
   ON public.conversations FOR SELECT
   USING (
-    -- Direct conversation
-    (type = 'direct' AND (user1_id = auth.uid() OR user2_id = auth.uid()))
+    -- Private conversation
+    (type = 'private' AND (user1_id = auth.uid() OR user2_id = auth.uid()))
     -- OR group conversation where user is a member
     OR (type = 'group' AND EXISTS (
-      SELECT 1 FROM public.conversation_members cm 
-      WHERE cm.conversation_id = id 
+      SELECT 1 FROM public.conversation_members cm
+      WHERE cm.conversation_id = id
       AND cm.user_id = auth.uid()
     ))
   );
@@ -134,24 +134,24 @@ CREATE POLICY "Users can create conversations"
   ON public.conversations FOR INSERT
   WITH CHECK (auth.uid() IS NOT NULL);
 
--- Update: Users can update direct conversations they're part of, or groups they admin
+-- Update: Users can update private conversations they're part of, or groups they admin
 CREATE POLICY "Users can update their conversations"
   ON public.conversations FOR UPDATE
   USING (
-    (type = 'direct' AND (user1_id = auth.uid() OR user2_id = auth.uid()))
+    (type = 'private' AND (user1_id = auth.uid() OR user2_id = auth.uid()))
     OR (type = 'group' AND EXISTS (
-      SELECT 1 FROM public.conversation_members cm 
-      WHERE cm.conversation_id = id 
+      SELECT 1 FROM public.conversation_members cm
+      WHERE cm.conversation_id = id
       AND cm.user_id = auth.uid()
       AND cm.role = 'admin'
     ))
   );
 
--- Delete: Users can delete direct conversations, admins can delete groups
+-- Delete: Users can delete private conversations, admins can delete groups
 CREATE POLICY "Users can delete their conversations"
   ON public.conversations FOR DELETE
   USING (
-    (type = 'direct' AND (user1_id = auth.uid() OR user2_id = auth.uid()))
+    (type = 'private' AND (user1_id = auth.uid() OR user2_id = auth.uid()))
     OR (type = 'group' AND creator_id = auth.uid())
   );
 
@@ -171,10 +171,10 @@ CREATE POLICY "Users can view messages in their conversations"
       SELECT 1 FROM public.conversations c
       WHERE c.id = conversation_id
       AND (
-        (c.type = 'direct' AND (c.user1_id = auth.uid() OR c.user2_id = auth.uid()))
+        (c.type = 'private' AND (c.user1_id = auth.uid() OR c.user2_id = auth.uid()))
         OR (c.type = 'group' AND EXISTS (
-          SELECT 1 FROM public.conversation_members cm 
-          WHERE cm.conversation_id = c.id 
+          SELECT 1 FROM public.conversation_members cm
+          WHERE cm.conversation_id = c.id
           AND cm.user_id = auth.uid()
         ))
       )
@@ -190,10 +190,10 @@ CREATE POLICY "Users can send messages in their conversations"
       SELECT 1 FROM public.conversations c
       WHERE c.id = conversation_id
       AND (
-        (c.type = 'direct' AND (c.user1_id = auth.uid() OR c.user2_id = auth.uid()))
+        (c.type = 'private' AND (c.user1_id = auth.uid() OR c.user2_id = auth.uid()))
         OR (c.type = 'group' AND EXISTS (
-          SELECT 1 FROM public.conversation_members cm 
-          WHERE cm.conversation_id = c.id 
+          SELECT 1 FROM public.conversation_members cm
+          WHERE cm.conversation_id = c.id
           AND cm.user_id = auth.uid()
         ))
       )
@@ -203,6 +203,9 @@ CREATE POLICY "Users can send messages in their conversations"
 -- =============================================================================
 -- 6. HELPER FUNCTION: GET USER'S GROUP CONVERSATIONS
 -- =============================================================================
+
+-- Drop existing function first if it exists (return type may have changed)
+DROP FUNCTION IF EXISTS public.get_user_group_conversations(UUID);
 
 CREATE OR REPLACE FUNCTION public.get_user_group_conversations(p_user_id UUID)
 RETURNS TABLE (
@@ -219,7 +222,7 @@ SECURITY DEFINER
 AS $$
 BEGIN
   RETURN QUERY
-  SELECT 
+  SELECT
     c.id,
     c.group_name,
     c.group_avatar_path,
@@ -239,6 +242,9 @@ $$;
 -- 7. HELPER FUNCTION: GET GROUP MEMBERS WITH USER INFO
 -- =============================================================================
 
+-- Drop existing function first if it exists (return type may have changed)
+DROP FUNCTION IF EXISTS public.get_group_members(UUID);
+
 CREATE OR REPLACE FUNCTION public.get_group_members(p_conversation_id UUID)
 RETURNS TABLE (
   user_id UUID,
@@ -256,7 +262,7 @@ SECURITY DEFINER
 AS $$
 BEGIN
   RETURN QUERY
-  SELECT 
+  SELECT
     cm.user_id,
     cm.role,
     cm.joined_at,
@@ -276,6 +282,9 @@ $$;
 -- =============================================================================
 -- 8. FUNCTION: CREATE GROUP CONVERSATION
 -- =============================================================================
+
+-- Drop existing function first if it exists (signature may have changed)
+DROP FUNCTION IF EXISTS public.create_group_conversation(TEXT, UUID[], UUID);
 
 CREATE OR REPLACE FUNCTION public.create_group_conversation(
   p_group_name TEXT,

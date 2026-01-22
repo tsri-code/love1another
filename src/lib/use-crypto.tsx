@@ -21,8 +21,8 @@ import {
   decryptMessage,
   encryptPrayers,
   decryptPrayers,
-  encryptPrayersWithCachedKey,
-  decryptPrayersWithCachedKey,
+  encryptPrayersAuto,
+  decryptPrayersAuto,
   isUserUnlocked,
   reEncryptPrivateKey,
   checkCryptoSupport,
@@ -50,7 +50,7 @@ interface CryptoContextType {
   isLoading: boolean;
   cryptoSupported: boolean;
   missingFeatures: string[];
-  migrationState: "unknown" | "legacy" | "migrating" | "upgraded" | "needs_recovery";
+  migrationState: "unknown" | "legacy" | "migrating" | "upgraded";
   needsRecoverySetup: boolean;
 
   // Key Management
@@ -141,7 +141,7 @@ interface CryptoContextType {
     oldPassword: string,
     newPassword: string
   ) => Promise<Omit<E2EEKeys, "userId">>;
-  setMigrationState: (state: "unknown" | "legacy" | "migrating" | "upgraded" | "needs_recovery") => void;
+  setMigrationState: (state: "unknown" | "legacy" | "migrating" | "upgraded") => void;
   setNeedsRecoverySetup: (needs: boolean) => void;
 }
 
@@ -168,7 +168,7 @@ export function CryptoProvider({ children }: CryptoProviderProps) {
   const [cryptoSupported] = useState(cryptoCheck.supported);
   const [missingFeatures] = useState<string[]>(cryptoCheck.missing);
   const [migrationState, setMigrationState] = useState<
-    "unknown" | "legacy" | "migrating" | "upgraded" | "needs_recovery"
+    "unknown" | "legacy" | "migrating" | "upgraded"
   >("unknown");
   const [needsRecoverySetup, setNeedsRecoverySetup] = useState(false);
 
@@ -307,7 +307,8 @@ export function CryptoProvider({ children }: CryptoProviderProps) {
       prayers: object,
       userId: string
     ): Promise<{ encrypted: string; iv: string }> => {
-      return encryptPrayersWithCachedKey(prayers, userId);
+      // Use encryptPrayersAuto which prefers DEK, falls back to legacy prayerKey
+      return encryptPrayersAuto(prayers, userId);
     },
     []
   );
@@ -319,7 +320,8 @@ export function CryptoProvider({ children }: CryptoProviderProps) {
       ivBase64: string,
       userId: string
     ): Promise<object> => {
-      return decryptPrayersWithCachedKey(encryptedBase64, ivBase64, userId);
+      // Use decryptPrayersAuto which tries DEK first, then falls back to legacy prayerKey
+      return decryptPrayersAuto(encryptedBase64, ivBase64, null, userId);
     },
     []
   );
@@ -353,7 +355,7 @@ export function CryptoProvider({ children }: CryptoProviderProps) {
 
       // Store DEK in session
       await storeDEKInSession(userId, result.dek);
-      
+
       // Also store as CryptoKey for e2e-crypto functions
       const dekKey = await importDEK(result.dek);
       await storeDEK(userId, dekKey);
@@ -400,7 +402,7 @@ export function CryptoProvider({ children }: CryptoProviderProps) {
 
         // Store DEK in session
         await storeDEKInSession(userId, dek);
-        
+
         // Also store as CryptoKey for e2e-crypto functions
         const dekKey = await importDEK(dek);
         await storeDEK(userId, dekKey);
@@ -441,7 +443,7 @@ export function CryptoProvider({ children }: CryptoProviderProps) {
 
       // Store DEK in session
       await storeDEKInSession(userId, result.dek);
-      
+
       // Also store as CryptoKey for e2e-crypto functions
       const dekKey = await importDEK(result.dek);
       await storeDEK(userId, dekKey);

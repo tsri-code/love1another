@@ -12,7 +12,9 @@ import {
 } from "@/components/ui/alert";
 import { PasswordInput } from "@/components/PasswordInput";
 import { MigrationSetup } from "@/components/MigrationSetup";
+import { RecoverySetup, RecoveryRestore } from "@/components/RecoverySetup";
 import { checkNeedsMigration } from "@/lib/migration-crypto";
+import { E2EEKeys } from "@/lib/dek-crypto";
 
 type AuthMode = "login" | "signup" | "verify-otp" | "forgot-password" | "reset-password";
 
@@ -52,13 +54,25 @@ export default function LoginPage() {
   const [migrationUserId, setMigrationUserId] = useState("");
   const [migrationPassword, setMigrationPassword] = useState("");
 
+  // Recovery state (after password reset)
+  const [showRecoveryPrompt, setShowRecoveryPrompt] = useState(false);
+  const [recoveryUserId, setRecoveryUserId] = useState("");
+  const [recoveryPassword, setRecoveryPassword] = useState("");
+  const [recoveryE2eeKeys, setRecoveryE2eeKeys] = useState<E2EEKeys | null>(null);
+  const [recoveryError, setRecoveryError] = useState("");
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
+
+  // Recovery code display after signup
+  const [showRecoveryCodeSetup, setShowRecoveryCodeSetup] = useState(false);
+  const [newUserRecoveryCode, setNewUserRecoveryCode] = useState("");
+
   // Ref to track if password reset is in progress (prevents auth state change interference)
   const isResettingPasswordRef = useRef(false);
 
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClient();
-  const { generateKeys, unlock, cryptoSupported, missingFeatures } =
+  const { generateKeys, unlock, unlockWithDEK, restoreWithRecovery, setupEnvelope, cryptoSupported, missingFeatures } =
     useCrypto();
 
   // Resend cooldown timer
@@ -249,7 +263,40 @@ export default function LoginPage() {
         // Check if user needs migration to new encryption system
         const needsMigration = await checkNeedsMigration(data.user.id);
 
-        // Unlock encryption keys
+        // Check if user has upgraded E2EE keys (DEK-based)
+        const e2eeKeysData = await fetchE2eeKeys(data.user.id);
+
+        // If user has upgraded encryption, try DEK unlock first
+        if (e2eeKeysData && e2eeKeysData.migrationState === "upgraded") {
+          try {
+            const dekUnlockSuccess = await unlockWithDEK(e2eeKeysData, password, data.user.id);
+            if (dekUnlockSuccess) {
+              // Successfully unlocked with DEK - redirect to home
+              router.push("/");
+              router.refresh();
+              return;
+            }
+          } catch (dekError) {
+            console.warn("DEK unlock failed:", dekError);
+          }
+
+          // DEK unlock failed - user likely reset password and needs recovery code
+          if (e2eeKeysData.wrappedDekRecovery && e2eeKeysData.recoveryKdfSalt) {
+            // Show recovery prompt
+            setRecoveryUserId(data.user.id);
+            setRecoveryPassword(password);
+            setRecoveryE2eeKeys(e2eeKeysData);
+            setShowRecoveryPrompt(true);
+            setIsLoading(false);
+            return;
+          } else {
+            // No recovery code set up - data is lost, continue to app
+            console.warn("DEK unlock failed and no recovery code available");
+            setError("Your encrypted data could not be restored. Recovery code was not set up.");
+          }
+        }
+
+        // Unlock legacy encryption keys
         const userKeys = await fetchUserKeys(data.user.id);
         let unlockSucceeded = false;
 
@@ -342,7 +389,7 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      // Generate E2E encryption keys first
+      // Generate E2E encryption keys (legacy RSA keys - still needed for messaging)
       const userKeys = await generateKeys(password);
 
       // Sign up with Supabase
@@ -377,7 +424,7 @@ export default function LoginPage() {
         // Check if email confirmation is required
         if (data.session) {
           // Email confirmation disabled - user is logged in immediately
-          // Store encryption keys in Supabase (we have a session)
+          // Store legacy encryption keys in Supabase
           const { error: keysError } = await supabase.from("user_keys").insert({
             user_id: data.user.id,
             public_key: userKeys.publicKey,
@@ -386,14 +433,46 @@ export default function LoginPage() {
           });
 
           if (keysError) {
-            console.error("Error storing encryption keys:", keysError);
+            console.error("Error storing legacy encryption keys:", keysError);
           }
 
-          await unlock(userKeys, password, data.user.id);
+          // Set up DEK-based envelope encryption
+          try {
+            const { recoveryCode, e2eeKeys } = await setupEnvelope(password, data.user.id);
 
-          // Wait for session to be fully established before navigating
-          await new Promise(resolve => setTimeout(resolve, 300));
-          window.location.href = "/";
+            // Store E2EE keys in database
+            const e2eeRes = await fetch("/api/users/e2ee-keys", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                wrappedDekPassword: e2eeKeys.wrappedDekPassword,
+                passwordKdfSalt: e2eeKeys.passwordKdfSalt,
+                wrappedDekRecovery: e2eeKeys.wrappedDekRecovery,
+                recoveryKdfSalt: e2eeKeys.recoveryKdfSalt,
+                encryptedRecoveryCode: e2eeKeys.encryptedRecoveryCode,
+                migrationState: e2eeKeys.migrationState,
+              }),
+            });
+
+            if (!e2eeRes.ok) {
+              console.error("Failed to save E2EE keys");
+            }
+
+            // Unlock legacy keys as well
+            await unlock(userKeys, password, data.user.id);
+
+            // Show recovery code to user before continuing
+            setNewUserRecoveryCode(recoveryCode);
+            setShowRecoveryCodeSetup(true);
+            setIsLoading(false);
+            return; // Don't redirect - wait for user to save recovery code
+          } catch (envelopeError) {
+            console.error("Error setting up envelope encryption:", envelopeError);
+            // Continue without DEK encryption - user can set up later
+            await unlock(userKeys, password, data.user.id);
+            await new Promise(resolve => setTimeout(resolve, 300));
+            window.location.href = "/";
+          }
         } else {
           // Email confirmation required - store keys in state for later
           setPendingEmail(email.trim());
@@ -447,9 +526,68 @@ export default function LoginPage() {
             console.error("Error storing encryption keys after OTP:", keysError);
           }
 
-          // Unlock encryption keys with the pending keys
+          // Unlock legacy encryption keys
           if (pendingPassword) {
             await unlock(pendingKeys, pendingPassword, data.user.id);
+          }
+
+          // Set up DEK-based envelope encryption
+          if (pendingPassword) {
+            try {
+              const { recoveryCode, e2eeKeys } = await setupEnvelope(pendingPassword, data.user.id);
+
+              // Store E2EE keys in database
+              const e2eeRes = await fetch("/api/users/e2ee-keys", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  wrappedDekPassword: e2eeKeys.wrappedDekPassword,
+                  passwordKdfSalt: e2eeKeys.passwordKdfSalt,
+                  wrappedDekRecovery: e2eeKeys.wrappedDekRecovery,
+                  recoveryKdfSalt: e2eeKeys.recoveryKdfSalt,
+                  encryptedRecoveryCode: e2eeKeys.encryptedRecoveryCode,
+                  migrationState: e2eeKeys.migrationState,
+                }),
+              });
+
+              if (!e2eeRes.ok) {
+                console.error("Failed to save E2EE keys after OTP verification");
+              }
+
+              // Create default "Me" profile for new user
+              try {
+                const fullName = data.user.user_metadata?.full_name || "Me";
+                const initials =
+                  fullName
+                    .split(" ")
+                    .map((n: string) => n[0])
+                    .join("")
+                    .toUpperCase()
+                    .slice(0, 2) || "ME";
+
+                await fetch("/api/people", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    displayName: "Me",
+                    type: "person",
+                    avatarInitials: initials,
+                    avatarColor: "#7c9bb8",
+                  }),
+                });
+              } catch (profileError) {
+                console.error("Error creating default profile:", profileError);
+              }
+
+              // Show recovery code to user before continuing
+              setNewUserRecoveryCode(recoveryCode);
+              setShowRecoveryCodeSetup(true);
+              setIsLoading(false);
+              return; // Wait for user to save recovery code
+            } catch (envelopeError) {
+              console.error("Error setting up envelope encryption after OTP:", envelopeError);
+              // Continue without DEK encryption
+            }
           }
         } else {
           // Fallback: try to fetch existing keys (for re-verification)
@@ -459,7 +597,7 @@ export default function LoginPage() {
           }
         }
 
-        // Create default "Me" profile for new user
+        // Create default "Me" profile for new user (fallback if not created above)
         try {
           const fullName = data.user.user_metadata?.full_name || "Me";
           const initials =
@@ -787,6 +925,35 @@ export default function LoginPage() {
     };
   };
 
+  // Helper to fetch user's E2EE keys (DEK-based encryption)
+  const fetchE2eeKeys = async (userId: string): Promise<E2EEKeys | null> => {
+    const { data, error } = await supabase
+      .from("user_e2ee_keys")
+      .select("*")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (error) {
+      console.warn("Could not fetch E2EE keys:", error);
+      return null;
+    }
+
+    if (!data) {
+      return null;
+    }
+
+    return {
+      userId: data.user_id,
+      version: data.version,
+      wrappedDekPassword: data.wrapped_dek_password,
+      passwordKdfSalt: data.password_kdf_salt,
+      wrappedDekRecovery: data.wrapped_dek_recovery,
+      recoveryKdfSalt: data.recovery_kdf_salt,
+      encryptedRecoveryCode: data.encrypted_recovery_code,
+      migrationState: data.migration_state,
+    };
+  };
+
   const resetForm = () => {
     setPassword("");
     setConfirmPassword("");
@@ -870,6 +1037,22 @@ export default function LoginPage() {
     );
   }
 
+  // Show recovery code setup after signup
+  if (showRecoveryCodeSetup && newUserRecoveryCode) {
+    return (
+      <RecoverySetup
+        recoveryCode={newUserRecoveryCode}
+        onComplete={() => {
+          // Clear sensitive data
+          setNewUserRecoveryCode("");
+          setShowRecoveryCodeSetup(false);
+          // Redirect to home
+          window.location.href = "/";
+        }}
+      />
+    );
+  }
+
   // Show migration setup modal
   if (showMigration && migrationUserId && migrationPassword) {
     return (
@@ -891,6 +1074,125 @@ export default function LoginPage() {
             setMigrationPassword("");
           }}
         />
+      </div>
+    );
+  }
+
+  // Show recovery prompt after password reset
+  if (showRecoveryPrompt && recoveryUserId && recoveryE2eeKeys) {
+    return (
+      <div className="lock-screen">
+        <div
+          className="lock-card card card-elevated animate-fade-in"
+          style={{ maxWidth: "400px", width: "100%" }}
+        >
+          {/* Logo */}
+          <div
+            className="mx-auto"
+            style={{
+              width: "80px",
+              height: "80px",
+              marginBottom: "var(--space-lg)",
+              borderRadius: "20px",
+              overflow: "hidden",
+              boxShadow: "var(--shadow-lg)",
+            }}
+          >
+            <img
+              src="/favicon.jpeg"
+              alt="Love1Another"
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
+          </div>
+
+          <h1
+            className="font-serif font-bold text-[var(--text-primary)]"
+            style={{
+              fontSize: "var(--text-xl)",
+              marginBottom: "var(--space-sm)",
+              textAlign: "center",
+            }}
+          >
+            Restore Encrypted Data
+          </h1>
+
+          <p
+            className="text-[var(--text-secondary)]"
+            style={{
+              marginBottom: "var(--space-lg)",
+              fontSize: "var(--text-sm)",
+              textAlign: "center",
+            }}
+          >
+            Your password was reset. Enter your recovery code to restore access to your encrypted messages and prayers.
+          </p>
+
+          <RecoveryRestore
+            onRestore={async (code) => {
+              setRecoveryLoading(true);
+              setRecoveryError("");
+
+              try {
+                // Restore with recovery code and re-wrap with new password
+                const updatedKeys = await restoreWithRecovery(
+                  recoveryE2eeKeys,
+                  code,
+                  recoveryPassword,
+                  recoveryUserId
+                );
+
+                // Save updated E2EE keys to database
+                const res = await fetch("/api/users/e2ee-keys", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    wrappedDekPassword: updatedKeys.wrappedDekPassword,
+                    passwordKdfSalt: updatedKeys.passwordKdfSalt,
+                    wrappedDekRecovery: updatedKeys.wrappedDekRecovery,
+                    recoveryKdfSalt: updatedKeys.recoveryKdfSalt,
+                    encryptedRecoveryCode: updatedKeys.encryptedRecoveryCode,
+                    migrationState: updatedKeys.migrationState,
+                  }),
+                });
+
+                if (!res.ok) {
+                  throw new Error("Failed to save restored encryption keys");
+                }
+
+                // Clear sensitive data
+                setRecoveryPassword("");
+                setRecoveryE2eeKeys(null);
+                setShowRecoveryPrompt(false);
+
+                // Redirect to home
+                router.push("/");
+                router.refresh();
+              } catch (err) {
+                console.error("Recovery error:", err);
+                setRecoveryError(
+                  err instanceof Error
+                    ? err.message
+                    : "Invalid recovery code. Please check and try again."
+                );
+              } finally {
+                setRecoveryLoading(false);
+              }
+            }}
+            onSkip={() => {
+              // User chooses to skip - their encrypted data is inaccessible
+              // Clear sensitive data
+              setRecoveryPassword("");
+              setRecoveryE2eeKeys(null);
+              setShowRecoveryPrompt(false);
+
+              // Continue to app - they lose access to encrypted data
+              router.push("/");
+              router.refresh();
+            }}
+            isLoading={recoveryLoading}
+            error={recoveryError}
+          />
+        </div>
       </div>
     );
   }

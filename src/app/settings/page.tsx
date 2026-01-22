@@ -17,7 +17,7 @@ import { useNotifications } from "@/lib/use-notifications";
 import { PWAInstructions } from "@/components/PWAInstructions";
 import { PasswordInput } from "@/components/PasswordInput";
 import { useCrypto } from "@/lib/use-crypto";
-import { ViewRecoveryCode, RecoveryRestore } from "@/components/RecoverySetup";
+import { ViewRecoveryCode } from "@/components/RecoverySetup";
 import { E2EEKeys } from "@/lib/dek-crypto";
 
 export default function SettingsPage() {
@@ -65,15 +65,16 @@ export default function SettingsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Encryption state
-  const { getRecoveryCode } = useCrypto();
+  const { getRecoveryCode, changePasswordWithDEK, restoreWithRecovery } = useCrypto();
   const [showViewRecoveryCode, setShowViewRecoveryCode] = useState(false);
   const [recoveryCodeToView, setRecoveryCodeToView] = useState<string | null>(null);
   const [showRestoreEncryption, setShowRestoreEncryption] = useState(false);
   const [encryptionPasswordInput, setEncryptionPasswordInput] = useState("");
-  const [encryptionOtpSent, setEncryptionOtpSent] = useState(false);
-  const [encryptionOtp, setEncryptionOtp] = useState("");
   const [encryptionError, setEncryptionError] = useState("");
   const [e2eeKeys, setE2eeKeys] = useState<E2EEKeys | null>(null);
+  const [restoreLoading, setRestoreLoading] = useState(false);
+  const [restoreError, setRestoreError] = useState("");
+  const [restorePasswordInput, setRestorePasswordInput] = useState("");
 
   // Load E2EE keys
   useEffect(() => {
@@ -111,68 +112,34 @@ export default function SettingsPage() {
     loadE2eeKeys();
   }, [user]);
 
-  // Handle view recovery code (step-up verification)
+  // Handle view recovery code (password verification)
   const handleViewRecoveryCode = async () => {
     setEncryptionError("");
 
-    if (!encryptionOtpSent) {
-      // Step 1: Verify password and send OTP
-      try {
-        const supabase = createClient();
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email: user?.email || "",
-          password: encryptionPasswordInput,
-        });
+    try {
+      const supabase = createClient();
+      
+      // Verify password by attempting sign in
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: user?.email || "",
+        password: encryptionPasswordInput,
+      });
 
-        if (signInError) {
-          setEncryptionError("Incorrect password");
-          return;
-        }
-
-        // Send OTP
-        const { error: otpError } = await supabase.auth.signInWithOtp({
-          email: user?.email || "",
-        });
-
-        if (otpError) {
-          setEncryptionError("Failed to send verification code");
-          return;
-        }
-
-        setEncryptionOtpSent(true);
-        showToast("Verification code sent to your email", "success");
-      } catch {
-        setEncryptionError("An error occurred");
+      if (signInError) {
+        setEncryptionError("Incorrect password");
+        return;
       }
-    } else {
-      // Step 2: Verify OTP and show recovery code
-      try {
-        const supabase = createClient();
-        const { error: verifyError } = await supabase.auth.verifyOtp({
-          email: user?.email || "",
-          token: encryptionOtp,
-          type: "email",
-        });
 
-        if (verifyError) {
-          setEncryptionError("Invalid or expired code");
-          return;
-        }
-
-        // Decrypt and show recovery code
-        if (e2eeKeys) {
-          const code = await getRecoveryCode(e2eeKeys, encryptionPasswordInput);
-          setRecoveryCodeToView(code);
-          setShowViewRecoveryCode(true);
-        }
-
-        // Reset state
-        setEncryptionPasswordInput("");
-        setEncryptionOtp("");
-        setEncryptionOtpSent(false);
-      } catch {
-        setEncryptionError("Failed to verify code");
+      // Decrypt and show recovery code
+      if (e2eeKeys) {
+        const code = await getRecoveryCode(e2eeKeys, encryptionPasswordInput);
+        setRecoveryCodeToView(code);
       }
+
+      // Reset password input
+      setEncryptionPasswordInput("");
+    } catch {
+      setEncryptionError("Failed to retrieve recovery code");
     }
   };
 
@@ -367,7 +334,7 @@ export default function SettingsPage() {
         return;
       }
 
-      // Update password
+      // Update password in Supabase Auth
       const { error: updateError } = await supabase.auth.updateUser({
         password: newPassword,
       });
@@ -375,6 +342,56 @@ export default function SettingsPage() {
       if (updateError) {
         setPasswordError(updateError.message || "Failed to update password");
         return;
+      }
+
+      // Re-wrap DEK with new password if user has upgraded encryption
+      if (e2eeKeys && e2eeKeys.migrationState === "upgraded") {
+        try {
+          const updatedKeys = await changePasswordWithDEK(
+            e2eeKeys,
+            currentPassword,
+            newPassword
+          );
+
+          // Save updated E2EE keys to database
+          const res = await fetch("/api/users/e2ee-keys", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              wrappedDekPassword: updatedKeys.wrappedDekPassword,
+              passwordKdfSalt: updatedKeys.passwordKdfSalt,
+              encryptedRecoveryCode: updatedKeys.encryptedRecoveryCode,
+              // Keep existing recovery-related fields unchanged
+              wrappedDekRecovery: updatedKeys.wrappedDekRecovery,
+              recoveryKdfSalt: updatedKeys.recoveryKdfSalt,
+              migrationState: updatedKeys.migrationState,
+            }),
+          });
+
+          if (!res.ok) {
+            console.error("Failed to save updated E2EE keys");
+            // Password is already changed, but encryption keys weren't updated
+            // This is a critical issue - show warning
+            setPasswordError(
+              "Password changed but encryption keys failed to update. Please restore from recovery code."
+            );
+            return;
+          }
+
+          // Update local state with new keys
+          setE2eeKeys({
+            ...e2eeKeys,
+            wrappedDekPassword: updatedKeys.wrappedDekPassword,
+            passwordKdfSalt: updatedKeys.passwordKdfSalt,
+            encryptedRecoveryCode: updatedKeys.encryptedRecoveryCode,
+          });
+        } catch (dekError) {
+          console.error("Failed to re-wrap DEK:", dekError);
+          setPasswordError(
+            "Password changed but encryption keys failed to update. Please restore from recovery code."
+          );
+          return;
+        }
       }
 
       setPasswordSuccess("Password changed successfully!");
@@ -890,7 +907,7 @@ export default function SettingsPage() {
               {/* Status */}
               <div
                 className="flex items-center gap-3 p-4 rounded-lg"
-                style={{ 
+                style={{
                   backgroundColor: "var(--surface-elevated)",
                   marginBottom: "var(--space-lg)",
                 }}
@@ -947,18 +964,37 @@ export default function SettingsPage() {
                   </button>
                 )}
 
-                {/* Restore Encrypted History Button */}
+                {/* Restore Encryption Button */}
                 <button
-                  className="btn btn-ghost w-full text-[var(--text-secondary)]"
+                  className="btn btn-secondary w-full"
                   onClick={() => setShowRestoreEncryption(true)}
-                  style={{ fontSize: "var(--text-sm)", padding: "var(--space-md)" }}
+                  style={{
+                    padding: "var(--space-md)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "var(--space-sm)",
+                  }}
                 >
-                  Restore encrypted history on this device
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                    />
+                  </svg>
+                  Restore Encryption on This Device
                 </button>
               </div>
             </div>
 
-            {/* View Recovery Code Modal */}
+            {/* View Recovery Code Modal - Password Verification */}
             {showViewRecoveryCode && !recoveryCodeToView && (
               <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
                 <div
@@ -972,42 +1008,21 @@ export default function SettingsPage() {
                     className="text-lg font-semibold mb-4"
                     style={{ color: "var(--text-primary)" }}
                   >
-                    {encryptionOtpSent ? "Enter Verification Code" : "Verify Your Identity"}
+                    Verify Your Identity
                   </h3>
 
-                  {!encryptionOtpSent ? (
-                    <>
-                      <p
-                        className="text-sm mb-4"
-                        style={{ color: "var(--text-secondary)" }}
-                      >
-                        Enter your password to continue. We will send a verification code to your email.
-                      </p>
-                      <PasswordInput
-                        className="input mb-4"
-                        placeholder="Enter your password"
-                        value={encryptionPasswordInput}
-                        onChange={(e) => setEncryptionPasswordInput(e.target.value)}
-                      />
-                    </>
-                  ) : (
-                    <>
-                      <p
-                        className="text-sm mb-4"
-                        style={{ color: "var(--text-secondary)" }}
-                      >
-                        Enter the 6-digit code sent to {user?.email}
-                      </p>
-                      <input
-                        type="text"
-                        className="input mb-4 text-center"
-                        placeholder="000000"
-                        value={encryptionOtp}
-                        onChange={(e) => setEncryptionOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                        maxLength={6}
-                      />
-                    </>
-                  )}
+                  <p
+                    className="text-sm mb-4"
+                    style={{ color: "var(--text-secondary)" }}
+                  >
+                    Enter your password to view your recovery code.
+                  </p>
+                  <PasswordInput
+                    className="input mb-4"
+                    placeholder="Enter your password"
+                    value={encryptionPasswordInput}
+                    onChange={(e) => setEncryptionPasswordInput(e.target.value)}
+                  />
 
                   {encryptionError && (
                     <Alert variant="destructive" icon={<AlertCircleIcon />} className="mb-4">
@@ -1021,8 +1036,6 @@ export default function SettingsPage() {
                       onClick={() => {
                         setShowViewRecoveryCode(false);
                         setEncryptionPasswordInput("");
-                        setEncryptionOtp("");
-                        setEncryptionOtpSent(false);
                         setEncryptionError("");
                       }}
                     >
@@ -1031,9 +1044,9 @@ export default function SettingsPage() {
                     <button
                       className="flex-1 btn btn-primary"
                       onClick={handleViewRecoveryCode}
-                      disabled={encryptionOtpSent ? encryptionOtp.length !== 6 : !encryptionPasswordInput}
+                      disabled={!encryptionPasswordInput}
                     >
-                      {encryptionOtpSent ? "Verify" : "Continue"}
+                      View Code
                     </button>
                   </div>
                 </div>
@@ -1055,20 +1068,191 @@ export default function SettingsPage() {
             {showRestoreEncryption && (
               <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
                 <div
-                  className="w-full max-w-md rounded-2xl"
+                  className="w-full max-w-md rounded-2xl p-6"
                   style={{
                     backgroundColor: "var(--surface-card)",
                     boxShadow: "var(--shadow-lg)",
                   }}
                 >
-                  <RecoveryRestore
-                    onRestore={async (code) => {
-                      // This would be implemented when we have the full restore logic
-                      showToast("Recovery feature coming soon", "info");
-                      console.log("Restore with code:", code);
-                    }}
-                    onSkip={() => setShowRestoreEncryption(false)}
-                  />
+                  {/* Header */}
+                  <div className="text-center mb-6">
+                    <div
+                      className="inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-4"
+                      style={{
+                        background: "linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%)",
+                      }}
+                    >
+                      <svg
+                        className="w-7 h-7 text-white"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
+                        />
+                      </svg>
+                    </div>
+                    <h3
+                      className="text-xl font-semibold mb-2"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      Restore Encryption
+                    </h3>
+                    <p
+                      className="text-sm"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
+                      Enter your recovery code and password to restore access to encrypted content on this device.
+                    </p>
+                  </div>
+
+                  {/* Recovery Code Input */}
+                  <div className="mb-4">
+                    <label
+                      className="block text-sm font-medium mb-2"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      Recovery Code
+                    </label>
+                    <textarea
+                      value={restoreError ? "" : undefined}
+                      placeholder="word1 word2 word3 word4 word5 word6"
+                      rows={2}
+                      id="restore-recovery-code"
+                      className="w-full px-4 py-3 rounded-xl text-center font-mono"
+                      style={{
+                        backgroundColor: "var(--surface-elevated)",
+                        color: "var(--text-primary)",
+                        border: `1px solid ${restoreError ? "var(--error)" : "var(--border-light)"}`,
+                      }}
+                      disabled={restoreLoading}
+                    />
+                  </div>
+
+                  {/* Password Input */}
+                  <div className="mb-4">
+                    <label
+                      className="block text-sm font-medium mb-2"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      Current Password
+                    </label>
+                    <PasswordInput
+                      className="input"
+                      placeholder="Enter your password"
+                      value={restorePasswordInput}
+                      onChange={(e) => setRestorePasswordInput(e.target.value)}
+                      disabled={restoreLoading}
+                    />
+                  </div>
+
+                  {restoreError && (
+                    <Alert variant="destructive" icon={<AlertCircleIcon />} className="mb-4">
+                      <AlertTitle>{restoreError}</AlertTitle>
+                    </Alert>
+                  )}
+
+                  {/* Buttons */}
+                  <div className="flex gap-3 mb-4">
+                    <button
+                      className="flex-1 btn btn-ghost"
+                      onClick={() => {
+                        setShowRestoreEncryption(false);
+                        setRestoreError("");
+                        setRestorePasswordInput("");
+                      }}
+                      disabled={restoreLoading}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="flex-1 btn btn-primary"
+                      disabled={!restorePasswordInput || restoreLoading}
+                      onClick={async () => {
+                        const codeInput = document.getElementById("restore-recovery-code") as HTMLTextAreaElement;
+                        const code = codeInput?.value?.trim();
+                        
+                        if (!code) {
+                          setRestoreError("Please enter your recovery code");
+                          return;
+                        }
+                        
+                        if (!e2eeKeys || !user) {
+                          setRestoreError("Encryption keys not found. Please try again later.");
+                          return;
+                        }
+
+                        setRestoreLoading(true);
+                        setRestoreError("");
+
+                        try {
+                          // Restore with recovery code and re-wrap with current password
+                          const updatedKeys = await restoreWithRecovery(
+                            e2eeKeys,
+                            code.toLowerCase(),
+                            restorePasswordInput,
+                            user.id
+                          );
+
+                          // Save updated E2EE keys to database
+                          const res = await fetch("/api/users/e2ee-keys", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              wrappedDekPassword: updatedKeys.wrappedDekPassword,
+                              passwordKdfSalt: updatedKeys.passwordKdfSalt,
+                              wrappedDekRecovery: updatedKeys.wrappedDekRecovery,
+                              recoveryKdfSalt: updatedKeys.recoveryKdfSalt,
+                              encryptedRecoveryCode: updatedKeys.encryptedRecoveryCode,
+                              migrationState: updatedKeys.migrationState,
+                            }),
+                          });
+
+                          if (!res.ok) {
+                            throw new Error("Failed to save restored encryption keys");
+                          }
+
+                          // Update local state
+                          setE2eeKeys({
+                            userId: user.id,
+                            version: e2eeKeys.version,
+                            wrappedDekPassword: updatedKeys.wrappedDekPassword,
+                            passwordKdfSalt: updatedKeys.passwordKdfSalt,
+                            wrappedDekRecovery: updatedKeys.wrappedDekRecovery,
+                            recoveryKdfSalt: updatedKeys.recoveryKdfSalt,
+                            encryptedRecoveryCode: updatedKeys.encryptedRecoveryCode,
+                            migrationState: updatedKeys.migrationState as "legacy" | "migrating" | "upgraded",
+                          });
+
+                          setShowRestoreEncryption(false);
+                          setRestorePasswordInput("");
+                          showToast("Encryption restored successfully!", "success");
+                        } catch (error) {
+                          console.error("Restore error:", error);
+                          setRestoreError(
+                            error instanceof Error
+                              ? error.message
+                              : "Invalid recovery code or password. Please try again."
+                          );
+                        } finally {
+                          setRestoreLoading(false);
+                        }
+                      }}
+                    >
+                      {restoreLoading ? "Restoring..." : "Restore"}
+                    </button>
+                  </div>
+
+                  <p
+                    className="text-xs text-center"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Use this if you reset your password and need to restore encrypted content on this device.
+                  </p>
                 </div>
               </div>
             )}

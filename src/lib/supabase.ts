@@ -15,25 +15,11 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
  * issue where Supabase keeps retrying with invalid tokens. Token refresh is
  * handled manually in AuthGuard with proper error handling.
  *
- * Note: We're not using strict database types here because the Supabase
- * schema may not be fully set up yet. Once the migration is complete,
- * add back: createBrowserClient<Database>(...)
+ * Note: Stale token clearing is handled by supabase-init.ts which runs once
+ * on module load, NOT on every createClient() call. Cookies are managed by
+ * the Supabase SSR client and should not be cleared manually.
  */
 export function createClient() {
-  // CRITICAL: Clear any stale cookies before creating client
-  // This prevents Supabase from trying to restore invalid sessions
-  if (typeof document !== 'undefined') {
-    const cookies = document.cookie.split(';');
-    for (const cookie of cookies) {
-      const [name] = cookie.trim().split('=');
-      if (name && (name.startsWith('sb-') || name.includes('supabase'))) {
-        // Clear cookie by setting it to expire in the past
-        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
-        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
-      }
-    }
-  }
-
   return createBrowserClient(supabaseUrl, supabaseAnonKey, {
     auth: {
       // CRITICAL: Disable automatic token refresh to prevent infinite loops

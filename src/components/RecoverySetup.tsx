@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Alert, AlertDescription, WarningIcon } from "@/components/ui/alert";
 
 interface RecoverySetupProps {
@@ -18,8 +18,13 @@ export function RecoverySetup({
   onComplete,
   onCancel,
 }: RecoverySetupProps) {
-  const [confirmed, setConfirmed] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [confirmationWord, setConfirmationWord] = useState("");
+
+  // Get the last word for confirmation
+  const words = recoveryCode.split(" ");
+  const lastWord = words[words.length - 1]?.toLowerCase() || "";
+  const isConfirmed = confirmationWord.toLowerCase().trim() === lastWord;
 
   const handleCopy = async () => {
     try {
@@ -42,7 +47,7 @@ export function RecoverySetup({
   const handleDownload = () => {
     const content = `Love1Another Recovery Code
 ============================
-Save this code in a safe place. You will need it to restore 
+Save this code in a safe place. You will need it to restore
 your encrypted messages if you forget your password.
 
 Your Recovery Code:
@@ -98,14 +103,51 @@ Generated: ${new Date().toISOString()}`;
             className="text-xl md:text-2xl font-semibold mb-2"
             style={{ color: "var(--text-primary)" }}
           >
-            Protect Your Messages
+            Save Your Recovery Code
           </h2>
           <p
             className="text-sm md:text-base"
             style={{ color: "var(--text-secondary)" }}
           >
-            Save this recovery code. You will need it to restore your encrypted messages if you forget your password.
+            This is your only way to restore encrypted prayers and messages if you forget your password.
           </p>
+        </div>
+
+        {/* Critical Warning */}
+        <div
+          className="rounded-lg p-4 mb-6"
+          style={{
+            backgroundColor: "rgba(239, 68, 68, 0.1)",
+            border: "1px solid var(--error)",
+          }}
+        >
+          <div className="flex gap-3">
+            <svg
+              className="w-5 h-5 flex-shrink-0 mt-0.5"
+              style={{ color: "var(--error)" }}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+              />
+            </svg>
+            <div>
+              <p
+                className="text-sm font-medium mb-1"
+                style={{ color: "var(--error)" }}
+              >
+                Important: Save this code securely
+              </p>
+              <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                If you lose both your password AND this code, your encrypted data is permanently inaccessible. There is no way to recover it.
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Recovery Code Display */}
@@ -174,24 +216,43 @@ Generated: ${new Date().toISOString()}`;
           </AlertDescription>
         </Alert>
 
-        {/* Confirmation Checkbox */}
-        <label className="flex items-start gap-3 mb-6 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={confirmed}
-            onChange={(e) => setConfirmed(e.target.checked)}
-            className="mt-1 w-5 h-5 rounded"
-            style={{
-              accentColor: "var(--accent-primary)",
-            }}
-          />
-          <span
-            className="text-sm md:text-base"
+        {/* Confirmation - Type Last Word */}
+        <div className="mb-6">
+          <label
+            className="block text-sm font-medium mb-2"
             style={{ color: "var(--text-primary)" }}
           >
-            I have saved my recovery code in a safe place
-          </span>
-        </label>
+            To confirm you saved it, type the LAST word of your recovery code:
+          </label>
+          <input
+            type="text"
+            value={confirmationWord}
+            onChange={(e) => setConfirmationWord(e.target.value)}
+            placeholder="Type last word..."
+            className="w-full px-4 py-3 rounded-xl text-center font-mono"
+            style={{
+              backgroundColor: "var(--surface-elevated)",
+              color: "var(--text-primary)",
+              border: `2px solid ${isConfirmed ? "var(--success)" : "var(--border-light)"}`,
+            }}
+          />
+          {confirmationWord && !isConfirmed && (
+            <p
+              className="text-xs mt-1 text-center"
+              style={{ color: "var(--text-muted)" }}
+            >
+              Check your recovery code and try again
+            </p>
+          )}
+          {isConfirmed && (
+            <p
+              className="text-xs mt-1 text-center"
+              style={{ color: "var(--success)" }}
+            >
+              Confirmed! Click Continue to proceed.
+            </p>
+          )}
+        </div>
 
         {/* Continue Button */}
         <div className="flex gap-3">
@@ -210,15 +271,15 @@ Generated: ${new Date().toISOString()}`;
           )}
           <button
             onClick={onComplete}
-            disabled={!confirmed}
+            disabled={!isConfirmed}
             className={`flex-1 py-3 px-4 rounded-xl font-medium transition-all ${
-              !confirmed ? "opacity-50 cursor-not-allowed" : ""
+              !isConfirmed ? "opacity-50 cursor-not-allowed" : ""
             }`}
             style={{
-              background: confirmed
+              background: isConfirmed
                 ? "linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%)"
                 : "var(--surface-elevated)",
-              color: confirmed ? "white" : "var(--text-muted)",
+              color: isConfirmed ? "white" : "var(--text-muted)",
             }}
           >
             Continue
@@ -367,7 +428,7 @@ export function ViewRecoveryCode({ recoveryCode, onClose }: ViewRecoveryCodeProp
   const [timeLeft, setTimeLeft] = useState(60);
 
   // Auto-close after 60 seconds
-  useState(() => {
+  useEffect(() => {
     const interval = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
@@ -380,7 +441,7 @@ export function ViewRecoveryCode({ recoveryCode, onClose }: ViewRecoveryCodeProp
     }, 1000);
 
     return () => clearInterval(interval);
-  });
+  }, [onClose]);
 
   const handleCopy = async () => {
     try {

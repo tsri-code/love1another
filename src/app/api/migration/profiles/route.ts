@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
 
       // Fetch links where user's profile is involved
       const { data: links, error: linksError } = await supabase
-        .from("profile_links")
+        .from("links")
         .select("id, encrypted_prayers, encryption_iv")
         .or(`profile1_id.in.(${profileIds.join(",")}),profile2_id.in.(${profileIds.join(",")})`)
         .not("encrypted_prayers", "is", null);

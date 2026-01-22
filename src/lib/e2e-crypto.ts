@@ -745,6 +745,13 @@ export async function decryptPrayersWithCachedKey(
  * Check if the user's encryption keys are unlocked (available in IndexedDB)
  */
 export async function isUserUnlocked(userId: string): Promise<boolean> {
+  // Check for DEK first (preferred for migrated/new users)
+  const dek = await getStoredDEK(userId);
+  if (dek !== null) {
+    return true;
+  }
+
+  // Fall back to legacy keys
   const privateKey = await getStoredPrivateKey(userId);
   const prayerKey = await getStoredPrayerKey(userId);
   return privateKey !== null && prayerKey !== null;
@@ -908,6 +915,32 @@ export async function decryptPrayersWithDEK(
 
   const plaintext = await decryptWithDEK(encrypted, userId);
   return JSON.parse(plaintext);
+}
+
+/**
+ * Encrypt prayers, preferring DEK (e2ee_v2) when available, falling back to legacy
+ *
+ * @param prayers - Prayer data to encrypt
+ * @param userId - User ID
+ * @returns Encrypted prayer data
+ */
+export async function encryptPrayersAuto(
+  prayers: object,
+  userId: string
+): Promise<{ encrypted: string; iv: string }> {
+  // Try DEK first (preferred for migrated users)
+  const dek = await getStoredDEK(userId);
+  if (dek) {
+    return encryptPrayersWithDEK(prayers, userId);
+  }
+
+  // Fall back to legacy prayer key
+  const prayerKey = await getStoredPrayerKey(userId);
+  if (prayerKey) {
+    return encryptPrayersWithCachedKey(prayers, userId);
+  }
+
+  throw new Error("No encryption keys available. Please log in again.");
 }
 
 /**
