@@ -334,7 +334,22 @@ export function MessagesButton({
     }
   }, [user?.id]);
 
-  // Fetch conversations when modal opens
+  // Fetch conversations on mount, when modal opens, and poll periodically for notifications
+  useEffect(() => {
+    if (!user?.id) return;
+    
+    // Initial fetch
+    fetchConversations();
+    
+    // Poll every 30 seconds for new messages (for notification badges)
+    const pollInterval = setInterval(() => {
+      fetchConversations();
+    }, 30000);
+    
+    return () => clearInterval(pollInterval);
+  }, [user?.id, fetchConversations]);
+  
+  // Also fetch when modal opens (for immediate refresh)
   useEffect(() => {
     if (isOpen && user?.id) {
       fetchConversations();

@@ -731,8 +731,15 @@ BEGIN
     SELECT 1 FROM conversation_members
     WHERE conversation_id = p_conversation_id AND user_id = p_new_member_id
   ) THEN
+    -- Clear any soft-delete records so they can see the conversation
+    DELETE FROM conversation_deletions
+    WHERE conversation_id = p_conversation_id AND user_id = p_new_member_id;
     RETURN TRUE; -- Already a member, consider it success
   END IF;
+
+  -- Clear any soft-delete records from previous membership
+  DELETE FROM conversation_deletions
+  WHERE conversation_id = p_conversation_id AND user_id = p_new_member_id;
 
   -- Add the member
   INSERT INTO conversation_members (conversation_id, user_id)
