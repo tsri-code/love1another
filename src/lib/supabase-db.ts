@@ -1056,7 +1056,7 @@ export async function deleteConversation(
 }
 
 /**
- * Add a member to a group conversation (creator only)
+ * Add a member to a group conversation (admins only)
  * Uses RPC function that bypasses RLS and checks access internally
  */
 export async function addGroupMember(

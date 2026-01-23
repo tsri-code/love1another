@@ -687,7 +687,7 @@ END;
 $$;
 
 -- -----------------------------------------------------------------------------
--- Function: Add a member to a group (creator only)
+-- Function: Add a member to a group (admins only)
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.add_group_member(
   p_conversation_id UUID,
@@ -701,6 +701,7 @@ AS $$
 DECLARE
   v_user_id UUID;
   v_conv RECORD;
+  v_user_role TEXT;
 BEGIN
   v_user_id := auth.uid();
 
@@ -716,8 +717,12 @@ BEGIN
     RETURN FALSE;
   END IF;
 
-  -- Only creator can add members
-  IF v_conv.creator_id != v_user_id THEN
+  -- Check if user is an admin
+  SELECT role INTO v_user_role
+  FROM conversation_members
+  WHERE conversation_id = p_conversation_id AND user_id = v_user_id;
+
+  IF v_user_role IS NULL OR v_user_role != 'admin' THEN
     RETURN FALSE;
   END IF;
 

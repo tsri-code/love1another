@@ -125,7 +125,7 @@ export async function GET(
   }
 }
 
-// POST /api/conversations/groups/[id]/members - Add member to group (creator only)
+// POST /api/conversations/groups/[id]/members - Add member to group (admins only)
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
