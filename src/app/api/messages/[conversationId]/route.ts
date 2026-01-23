@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   getAuthenticatedUser,
   getMessages,
+  getMessagesWithSender,
   sendMessage,
   markMessagesAsRead,
   deleteConversation,
@@ -38,12 +39,37 @@ export async function GET(
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get("limit") || "50", 10);
     const newestFirst = searchParams.get("newest") === "true";
-
-    // RPC function handles access control - returns empty if no access
-    const messages = await getMessages(conversationId, limit, newestFirst);
+    const includeSender = searchParams.get("includeSender") === "true";
 
     // Mark messages as read (RPC function handles access control)
     await markMessagesAsRead(conversationId, user.id);
+
+    if (includeSender) {
+      // Use the new function that includes sender info
+      const messages = await getMessagesWithSender(conversationId, limit, newestFirst);
+
+      return NextResponse.json({
+        messages: messages.map((m) => ({
+          id: m.id,
+          senderId: m.sender_id,
+          encryptedContent: m.encrypted_content,
+          iv: m.iv,
+          type: m.message_type,
+          isRead: m.is_read,
+          createdAt: m.created_at,
+          sender: {
+            fullName: m.sender_full_name,
+            username: m.sender_username,
+            avatarInitials: m.sender_avatar_initials,
+            avatarColor: m.sender_avatar_color,
+            avatarPath: m.sender_avatar_path,
+          },
+        })),
+      });
+    }
+
+    // Default: use original function without sender info
+    const messages = await getMessages(conversationId, limit, newestFirst);
 
     return NextResponse.json({
       messages: messages.map((m) => ({
@@ -56,10 +82,11 @@ export async function GET(
         createdAt: m.created_at,
       })),
     });
-  } catch (error) {
-    console.error("Error fetching messages:", error);
+  } catch (error: unknown) {
+    const err = error as { message?: string; code?: string };
+    console.error("Error fetching messages:", err);
     return NextResponse.json(
-      { error: "Failed to fetch messages" },
+      { error: "Failed to fetch messages", details: err.message, code: err.code },
       { status: 500 }
     );
   }

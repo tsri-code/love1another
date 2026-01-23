@@ -28,6 +28,7 @@ interface Message {
   senderName: string;
   senderAvatar?: string;
   senderColor?: string;
+  senderInitials?: string;
   content: string;
   type: "message" | "prayer_request";
   timestamp: string;
@@ -163,7 +164,7 @@ export function MessagesButton({
       // Fetch direct conversations
       const res = await fetch("/api/messages");
       const directConversations: Thread[] = [];
-      
+
       if (res.ok) {
         const data = await res.json();
         const conversations = data.conversations || [];
@@ -218,7 +219,7 @@ export function MessagesButton({
                 if (msgRes.ok) {
                   const msgData = await msgRes.json();
                   const messages = msgData.messages || [];
-                  
+
                   if (messages.length > 0) {
                     const msg = messages[0];
                     lastMessage = {
@@ -262,7 +263,7 @@ export function MessagesButton({
         if (groupRes.ok) {
           const groupData = await groupRes.json();
           const groups = groupData.groups || [];
-          
+
           for (const group of groups) {
             // Fetch last message for this group
             let lastMessage: Message = {
@@ -280,7 +281,7 @@ export function MessagesButton({
               if (msgRes.ok) {
                 const msgData = await msgRes.json();
                 const messages = msgData.messages || [];
-                
+
                 if (messages.length > 0) {
                   const msg = messages[0];
                   lastMessage = {
@@ -505,10 +506,10 @@ export function MessagesButton({
         },
         unreadCount: 0,
       };
-      
+
       setThreads((prev) => [newThread, ...prev]);
       setSelectedThread(newThread);
-      
+
       // Reset state
       setShowCreateGroup(false);
       setShowSearchCompose(false);
@@ -1421,17 +1422,31 @@ function ThreadView({
   } | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  
+
   // Group-specific state
   const [showGroupInfo, setShowGroupInfo] = useState(false);
   const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isRemovingMember, setIsRemovingMember] = useState<string | null>(null);
-  
+
+  // Group editing state
+  const [isEditingGroupName, setIsEditingGroupName] = useState(false);
+  const [editedGroupName, setEditedGroupName] = useState(thread.groupName || "");
+  const [isSavingGroup, setIsSavingGroup] = useState(false);
+  const [groupAvatarPath, setGroupAvatarPath] = useState(thread.groupAvatarPath || null);
+  const [isUploadingGroupAvatar, setIsUploadingGroupAvatar] = useState(false);
+  const groupAvatarInputRef = useRef<HTMLInputElement>(null);
+
+  // Add member state
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [availableFriends, setAvailableFriends] = useState<GroupMember[]>([]);
+  const [isLoadingFriends, setIsLoadingFriends] = useState(false);
+  const [isAddingMember, setIsAddingMember] = useState<string | null>(null);
+
   // Ref for scrolling to bottom
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-  
+
   // Start at bottom when messages load (instant, no animation)
   useEffect(() => {
     if (!isLoadingMessages && messages.length > 0 && messagesContainerRef.current) {
@@ -1445,8 +1460,16 @@ function ThreadView({
     if (thread.type === "group") {
       setIsLoadingMembers(true);
       fetch(`/api/conversations/groups/${thread.id}/members`)
-        .then((res) => res.json())
+        .then(async (res) => {
+          if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            console.error("Failed to fetch group members:", res.status, errorData);
+            return { members: [], isAdmin: false };
+          }
+          return res.json();
+        })
         .then((data) => {
+          console.log("Group members fetched:", data);
           setGroupMembers(data.members || []);
           setIsAdmin(data.isAdmin || false);
         })
@@ -1487,6 +1510,174 @@ function ThreadView({
     }
   };
 
+  // Fetch friends who can be added to the group
+  const fetchAvailableFriends = async () => {
+    setIsLoadingFriends(true);
+    try {
+      const res = await fetch("/api/friends");
+      if (res.ok) {
+        const data = await res.json();
+        const friends = (data.friends || []).map((f: {
+          id: string;
+          user: {
+            id: string;
+            fullName: string;
+            username: string;
+            avatarInitials: string | null;
+            avatarColor: string;
+            avatarPath: string | null;
+          };
+        }) => ({
+          userId: f.user.id,
+          fullName: f.user.fullName || f.user.username || "Unknown",
+          username: f.user.username || "",
+          avatarInitials: f.user.avatarInitials,
+          avatarColor: f.user.avatarColor,
+          avatarPath: f.user.avatarPath,
+          role: "member",
+        }));
+        // Filter out users who are already members
+        const memberIds = new Set(groupMembers.map((m) => m.userId));
+        setAvailableFriends(friends.filter((f: GroupMember) => !memberIds.has(f.userId)));
+      }
+    } catch (err) {
+      console.error("Error fetching friends:", err);
+    } finally {
+      setIsLoadingFriends(false);
+    }
+  };
+
+  // Handle adding a member to group
+  const handleAddMember = async (userId: string) => {
+    if (isAddingMember) return;
+    setIsAddingMember(userId);
+    try {
+      const res = await fetch(`/api/conversations/groups/${thread.id}/members`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      if (res.ok) {
+        // Refresh members list
+        const membersRes = await fetch(`/api/conversations/groups/${thread.id}/members`);
+        if (membersRes.ok) {
+          const data = await membersRes.json();
+          setGroupMembers(data.members || []);
+        }
+        // Remove from available friends
+        setAvailableFriends((prev) => prev.filter((f) => f.userId !== userId));
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        console.error("Failed to add member:", errorData);
+        alert("Failed to add member. " + (errorData.error || ""));
+      }
+    } catch (err) {
+      console.error("Error adding member:", err);
+      alert("Failed to add member. Please try again.");
+    } finally {
+      setIsAddingMember(null);
+    }
+  };
+
+  // Handle saving group name
+  const handleSaveGroupName = async () => {
+    if (!editedGroupName.trim() || isSavingGroup) return;
+    setIsSavingGroup(true);
+    try {
+      const res = await fetch(`/api/conversations/groups/${thread.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ groupName: editedGroupName.trim() }),
+      });
+      if (res.ok) {
+        // Update thread name locally - will be reflected on next refresh
+        thread.groupName = editedGroupName.trim();
+        thread.participantName = editedGroupName.trim();
+        setIsEditingGroupName(false);
+        // Force re-fetch conversations to update the list
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("refreshConversations"));
+        }
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        console.error("Failed to update group name:", res.status, errorData);
+        alert("Failed to save group name. Please try again.");
+      }
+    } catch (err) {
+      console.error("Error saving group name:", err);
+      alert("Failed to save group name. Please try again.");
+    } finally {
+      setIsSavingGroup(false);
+    }
+  };
+
+  // Handle group avatar upload
+  const handleGroupAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || isUploadingGroupAvatar) return;
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      alert("Please select an image file");
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Image must be less than 5MB");
+      return;
+    }
+
+    setIsUploadingGroupAvatar(true);
+    try {
+      // Upload the image
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("type", "group");
+      formData.append("groupId", thread.id);
+
+      const uploadRes = await fetch("/api/upload/avatar", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!uploadRes.ok) {
+        throw new Error("Failed to upload image");
+      }
+
+      const { url } = await uploadRes.json();
+
+      // Update the group with the new avatar path
+      const updateRes = await fetch(`/api/conversations/groups/${thread.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ groupAvatarPath: url }),
+      });
+
+      if (updateRes.ok) {
+        setGroupAvatarPath(url);
+        thread.groupAvatarPath = url;
+        // Force re-fetch conversations to update the list
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("refreshConversations"));
+        }
+      } else {
+        const errorData = await updateRes.json().catch(() => ({}));
+        console.error("Failed to update group avatar:", updateRes.status, errorData);
+        alert("Failed to save group image. Please try again.");
+      }
+    } catch (err) {
+      console.error("Error uploading group avatar:", err);
+      alert("Failed to upload image. Please try again.");
+    } finally {
+      setIsUploadingGroupAvatar(false);
+      // Reset the input
+      if (groupAvatarInputRef.current) {
+        groupAvatarInputRef.current.value = "";
+      }
+    }
+  };
+
   // Hooks for encryption
   const {
     encryptPrayers: cryptoEncryptPrayers,
@@ -1506,9 +1697,13 @@ function ThreadView({
 
       setIsLoadingMessages(true);
       try {
-        const res = await fetch(`/api/messages/${thread.id}?limit=50`);
+        // For group chats, include sender info to handle removed members
+        const includesSender = thread.type === "group";
+        const url = `/api/messages/${thread.id}?limit=50${includesSender ? "&includeSender=true" : ""}`;
+        const res = await fetch(url);
         if (!res.ok) {
-          console.error("Failed to fetch messages");
+          const errorData = await res.json().catch(() => ({}));
+          console.error("Failed to fetch messages:", res.status, errorData);
           setMessages([]);
           return;
         }
@@ -1522,11 +1717,23 @@ function ThreadView({
             type: string;
             createdAt: string;
             isRead: boolean;
+            sender?: {
+              fullName: string;
+              username: string | null;
+              avatarInitials: string | null;
+              avatarColor: string;
+              avatarPath: string | null;
+            };
           }) => ({
             id: msg.id,
             senderId: msg.senderId,
             senderName:
-              msg.senderId === currentUserId ? "You" : thread.participantName,
+              msg.senderId === currentUserId
+                ? "You"
+                : msg.sender?.fullName || thread.participantName,
+            senderAvatar: msg.sender?.avatarPath || undefined,
+            senderColor: msg.sender?.avatarColor || undefined,
+            senderInitials: msg.sender?.avatarInitials || undefined,
             content: msg.encryptedContent || "[Encrypted message]", // Would decrypt in production
             type: msg.type || "message",
             timestamp: msg.createdAt,
@@ -1544,7 +1751,7 @@ function ThreadView({
     };
 
     fetchMessages();
-  }, [thread.id, thread.participantName, currentUserId]);
+  }, [thread.id, thread.participantName, thread.type, currentUserId]);
 
   // Fetch profiles when needed
   useEffect(() => {
@@ -1611,7 +1818,7 @@ function ThreadView({
           m.id === tempMsg.id ? { ...m, id: data.message?.id || m.id } : m
         )
       );
-      
+
       // Notify parent to refresh thread list
       if (onMessageSent) {
         onMessageSent();
@@ -1944,8 +2151,8 @@ function ThreadView({
 
   return (
     <div
-      className="flex flex-col h-full"
-      style={{ maxHeight: "600px", position: "relative" }}
+      className="flex flex-col"
+      style={{ height: "100%", position: "relative" }}
     >
       {/* Profile Selector Modal */}
       {showProfileSelector && (
@@ -2143,8 +2350,9 @@ function ThreadView({
             flexDirection: "column",
           }}
         >
+          {/* Fixed Header */}
           <div
-            className="flex items-center"
+            className="flex items-center flex-shrink-0"
             style={{
               padding: "var(--space-md) var(--space-lg)",
               borderBottom: "1px solid var(--border-light)",
@@ -2171,45 +2379,179 @@ function ThreadView({
             </h2>
           </div>
 
-          {/* Group Name */}
-          <div
-            className="flex flex-col items-center text-center"
-            style={{ padding: "var(--space-xl)" }}
-          >
-            <div
-              className="rounded-full flex items-center justify-center"
-              style={{
-                width: "80px",
-                height: "80px",
-                background: "var(--accent-secondary)",
-                color: "white",
-                marginBottom: "var(--space-md)",
-              }}
-            >
-              <svg
-                style={{ width: "40px", height: "40px" }}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-                />
-              </svg>
-            </div>
-            <h3 className="font-semibold text-[var(--text-primary)]" style={{ fontSize: "var(--text-xl)" }}>
-              {thread.groupName || "Group"}
-            </h3>
-            <p className="text-[var(--text-muted)]" style={{ fontSize: "var(--text-sm)" }}>
-              {groupMembers.length} members
-            </p>
-          </div>
-
-          {/* Members List */}
+          {/* Scrollable Content */}
           <div className="flex-1 overflow-y-auto">
+            {/* Group Avatar & Name - Editable */}
+            <div
+              className="flex flex-col items-center text-center"
+              style={{ padding: "var(--space-xl)" }}
+            >
+              {/* Avatar with upload button */}
+              <div style={{ position: "relative", marginBottom: "var(--space-md)" }}>
+                <input
+                  ref={groupAvatarInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleGroupAvatarUpload}
+                  style={{ display: "none" }}
+                />
+                <div
+                  className="rounded-full flex items-center justify-center overflow-hidden cursor-pointer"
+                  style={{
+                    width: "80px",
+                    height: "80px",
+                    background: groupAvatarPath ? "transparent" : "var(--accent-secondary)",
+                    color: "white",
+                  }}
+                  onClick={() => groupAvatarInputRef.current?.click()}
+                  title="Click to change group photo"
+                >
+                  {isUploadingGroupAvatar ? (
+                    <div
+                      className="animate-spin rounded-full border-2 border-white border-t-transparent"
+                      style={{ width: "24px", height: "24px" }}
+                    />
+                  ) : groupAvatarPath ? (
+                    <img
+                      src={groupAvatarPath}
+                      alt="Group"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <svg
+                      style={{ width: "40px", height: "40px" }}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={1.5}
+                        d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+                      />
+                    </svg>
+                  )}
+                </div>
+                {/* Camera icon overlay */}
+                <div
+                  className="absolute flex items-center justify-center rounded-full cursor-pointer"
+                  style={{
+                    bottom: "0",
+                    right: "0",
+                    width: "28px",
+                    height: "28px",
+                    background: "var(--accent-primary)",
+                    border: "2px solid var(--surface-primary)",
+                  }}
+                  onClick={() => groupAvatarInputRef.current?.click()}
+                >
+                  <svg
+                    style={{ width: "14px", height: "14px" }}
+                    fill="none"
+                    stroke="white"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
+                    />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"
+                    />
+                  </svg>
+                </div>
+              </div>
+
+              {/* Editable Group Name */}
+              {isEditingGroupName ? (
+                <div className="flex items-center" style={{ gap: "8px", marginBottom: "4px" }}>
+                  <input
+                    type="text"
+                    value={editedGroupName}
+                    onChange={(e) => setEditedGroupName(e.target.value)}
+                    className="input"
+                    style={{
+                      fontSize: "var(--text-lg)",
+                      fontWeight: 600,
+                      textAlign: "center",
+                      padding: "8px 12px",
+                      width: "200px",
+                    }}
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleSaveGroupName();
+                      if (e.key === "Escape") {
+                        setIsEditingGroupName(false);
+                        setEditedGroupName(thread.groupName || "");
+                      }
+                    }}
+                  />
+                  <button
+                    className="icon-btn"
+                    onClick={handleSaveGroupName}
+                    disabled={isSavingGroup}
+                    style={{ background: "var(--accent-primary)", color: "white" }}
+                  >
+                    {isSavingGroup ? (
+                      <div
+                        className="animate-spin rounded-full border-2 border-white border-t-transparent"
+                        style={{ width: "16px", height: "16px" }}
+                      />
+                    ) : (
+                      <svg style={{ width: "16px", height: "16px" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </button>
+                  <button
+                    className="icon-btn"
+                    onClick={() => {
+                      setIsEditingGroupName(false);
+                      setEditedGroupName(thread.groupName || "");
+                    }}
+                  >
+                    <svg style={{ width: "16px", height: "16px" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ) : (
+                <div
+                  className="flex items-center cursor-pointer"
+                  style={{ gap: "8px", marginBottom: "4px" }}
+                  onClick={() => setIsEditingGroupName(true)}
+                  title="Click to edit group name"
+                >
+                  <h3 className="font-semibold text-[var(--text-primary)]" style={{ fontSize: "var(--text-xl)" }}>
+                    {thread.groupName || "Group"}
+                  </h3>
+                  <svg
+                    style={{ width: "16px", height: "16px", color: "var(--text-muted)" }}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                    />
+                  </svg>
+                </div>
+              )}
+              <p className="text-[var(--text-muted)]" style={{ fontSize: "var(--text-sm)" }}>
+                {groupMembers.length} member{groupMembers.length !== 1 ? "s" : ""}
+              </p>
+            </div>
+
+            {/* Members List */}
             <div
               className="text-[var(--text-muted)] text-sm font-medium"
               style={{
@@ -2282,25 +2624,175 @@ function ThreadView({
                 </div>
               ))
             )}
-          </div>
 
-          {/* Leave Group Button */}
-          <div style={{ padding: "var(--space-lg)" }}>
-            <button
-              className="btn w-full"
+            {/* Add Member Section */}
+            {isAdmin && (
+              <div style={{ padding: "var(--space-md) var(--space-lg)" }}>
+                {!showAddMember ? (
+                  <button
+                    className="btn w-full"
+                    style={{
+                      background: "var(--accent-primary)",
+                      color: "white",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "8px",
+                    }}
+                    onClick={() => {
+                      setShowAddMember(true);
+                      fetchAvailableFriends();
+                    }}
+                  >
+                    <svg style={{ width: "18px", height: "18px" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    Add Member
+                  </button>
+                ) : (
+                  <div
+                    style={{
+                      background: "var(--surface-elevated)",
+                      borderRadius: "12px",
+                      border: "1px solid var(--border-light)",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      className="flex items-center justify-between"
+                      style={{
+                        padding: "var(--space-sm) var(--space-md)",
+                        borderBottom: "1px solid var(--border-light)",
+                      }}
+                    >
+                      <span className="text-sm font-medium text-[var(--text-secondary)]">
+                        Add Friends to Group
+                      </span>
+                      <button
+                        className="icon-btn"
+                        onClick={() => setShowAddMember(false)}
+                        style={{ width: "28px", height: "28px" }}
+                      >
+                        <svg style={{ width: "14px", height: "14px" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div style={{ maxHeight: "200px", overflowY: "auto" }}>
+                      {isLoadingFriends ? (
+                        <div className="text-center text-[var(--text-muted)]" style={{ padding: "var(--space-lg)" }}>
+                          Loading friends...
+                        </div>
+                      ) : availableFriends.length === 0 ? (
+                        <div className="text-center text-[var(--text-muted)]" style={{ padding: "var(--space-lg)" }}>
+                          No friends available to add
+                        </div>
+                      ) : (
+                        availableFriends.map((friend) => (
+                          <div
+                            key={friend.userId}
+                            className="flex items-center"
+                            style={{
+                              padding: "var(--space-sm) var(--space-md)",
+                              gap: "var(--space-sm)",
+                              borderBottom: "1px solid var(--border-light)",
+                            }}
+                          >
+                            <div
+                              className="rounded-full flex items-center justify-center overflow-hidden"
+                              style={{
+                                width: "36px",
+                                height: "36px",
+                                background: friend.avatarPath ? "transparent" : friend.avatarColor || "#7c9bb8",
+                                color: "white",
+                                fontWeight: "600",
+                                fontSize: "var(--text-xs)",
+                              }}
+                            >
+                              {friend.avatarPath ? (
+                                <img src={friend.avatarPath} alt={friend.fullName} className="w-full h-full object-cover" />
+                              ) : (
+                                friend.avatarInitials || friend.fullName.substring(0, 2).toUpperCase()
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-[var(--text-primary)] truncate text-sm">
+                                {friend.fullName}
+                              </p>
+                            </div>
+                            <button
+                              className="btn btn-sm"
+                              style={{
+                                background: "var(--accent-primary)",
+                                color: "white",
+                                fontSize: "var(--text-xs)",
+                                padding: "4px 12px",
+                                height: "28px",
+                              }}
+                              onClick={() => handleAddMember(friend.userId)}
+                              disabled={isAddingMember === friend.userId}
+                            >
+                              {isAddingMember === friend.userId ? "..." : "Add"}
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Group Info Notice */}
+            <div
               style={{
-                background: "var(--error-light)",
-                color: "var(--error)",
-                border: "1px solid var(--error)",
-              }}
-              onClick={() => {
-                setShowGroupInfo(false);
-                setShowDeleteConfirm(true);
+                margin: "var(--space-lg)",
+                padding: "var(--space-md)",
+                backgroundColor: "var(--surface-elevated)",
+                borderRadius: "12px",
+                border: "1px solid var(--border-light)",
               }}
             >
-              Leave Group
-            </button>
+              <p
+                style={{
+                  fontSize: "var(--text-xs)",
+                  color: "var(--text-muted)",
+                  lineHeight: 1.5,
+                  marginBottom: "8px",
+                }}
+              >
+                <strong style={{ color: "var(--text-secondary)" }}>Note:</strong> If the group creator leaves, the entire group chat will be deleted for all members.
+              </p>
+              <p
+                style={{
+                  fontSize: "var(--text-xs)",
+                  color: "var(--text-muted)",
+                  lineHeight: 1.5,
+                }}
+              >
+                If a regular member leaves, they will simply be removed from the group and the conversation continues for others.
+              </p>
+            </div>
+
+            {/* Leave Group Button */}
+            <div style={{ padding: "0 var(--space-lg) var(--space-lg)" }}>
+              <button
+                className="btn w-full"
+                style={{
+                  background: "var(--error-light)",
+                  color: "var(--error)",
+                  border: "1px solid var(--error)",
+                }}
+                onClick={() => {
+                  setShowGroupInfo(false);
+                  setShowDeleteConfirm(true);
+                }}
+              >
+                {isAdmin ? "Delete Group" : "Leave Group"}
+              </button>
+            </div>
           </div>
+          {/* End scrollable content */}
         </div>
       )}
 
@@ -2334,7 +2826,7 @@ function ThreadView({
             width: "40px",
             height: "40px",
             background: thread.type === "group"
-              ? "var(--accent-secondary)"
+              ? (groupAvatarPath || thread.groupAvatarPath) ? "transparent" : "var(--accent-secondary)"
               : thread.participantAvatarPath
                 ? "transparent"
                 : thread.participantColor || getColorForName(thread.participantName),
@@ -2346,19 +2838,27 @@ function ThreadView({
           onClick={() => thread.type === "group" && setShowGroupInfo(true)}
         >
           {thread.type === "group" ? (
-            <svg
-              style={{ width: "20px", height: "20px" }}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.5}
-                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+            (groupAvatarPath || thread.groupAvatarPath) ? (
+              <img
+                src={groupAvatarPath || thread.groupAvatarPath || ""}
+                alt={thread.groupName || thread.participantName}
+                className="w-full h-full object-cover"
               />
-            </svg>
+            ) : (
+              <svg
+                style={{ width: "20px", height: "20px" }}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={1.5}
+                  d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+                />
+              </svg>
+            )
           ) : thread.participantAvatarPath ? (
             <img
               src={thread.participantAvatarPath}
@@ -2519,19 +3019,34 @@ function ThreadView({
             const isPrayerRequest = msg.type === "prayer_request";
 
             // Get sender info for group messages
-            const sender = thread.type === "group" && !isOwn ? memberLookup.get(msg.senderId) : null;
+            // First try memberLookup (for current members), then fall back to message's sender info
+            // This handles removed members whose info is stored in the message
+            const memberInfo = thread.type === "group" && !isOwn ? memberLookup.get(msg.senderId) : null;
+            const sender = thread.type === "group" && !isOwn ? {
+              fullName: memberInfo?.fullName || msg.senderName || "Unknown",
+              avatarColor: memberInfo?.avatarColor || msg.senderColor || "#7c9bb8",
+              avatarPath: memberInfo?.avatarPath || msg.senderAvatar || null,
+              avatarInitials: memberInfo?.avatarInitials || msg.senderInitials || null,
+            } : null;
 
             return (
               <div
                 key={msg.id}
                 className={`flex ${isOwn ? "justify-end" : "justify-start"}`}
-                style={{ marginBottom: "var(--space-sm)" }}
+                style={{
+                  marginBottom: "var(--space-md)",
+                  alignItems: "flex-end", // Align avatar to bottom of message
+                }}
               >
-                {/* Sender Avatar for group messages (non-own) */}
+                {/* Sender Avatar for group messages (non-own) - positioned at bottom near bubble tail */}
                 {thread.type === "group" && !isOwn && (
                   <div
-                    className="flex-shrink-0 mr-2 flex flex-col items-center"
-                    style={{ width: "32px" }}
+                    className="flex-shrink-0 flex flex-col justify-end"
+                    style={{
+                      width: "32px",
+                      marginRight: "8px",
+                      marginBottom: "2px", // Align with bubble tail
+                    }}
                   >
                     <div
                       className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium overflow-hidden"
@@ -2555,15 +3070,19 @@ function ThreadView({
                 )}
                 <div
                   style={{
-                    maxWidth: thread.type === "group" && !isOwn ? "calc(80% - 40px)" : "80%",
+                    maxWidth: thread.type === "group" && !isOwn ? "calc(80% - 44px)" : "80%",
                     position: "relative",
                   }}
                 >
-                  {/* Sender name for group messages */}
+                  {/* Sender name for group messages - with spacing from avatar */}
                   {thread.type === "group" && !isOwn && sender && (
                     <div
-                      className="text-xs mb-1 font-medium"
-                      style={{ color: sender.avatarColor || "var(--text-secondary)" }}
+                      className="text-xs font-medium"
+                      style={{
+                        color: sender.avatarColor || "var(--text-secondary)",
+                        marginBottom: "4px",
+                        marginLeft: "2px",
+                      }}
                     >
                       {sender.fullName}
                     </div>
@@ -2590,18 +3109,22 @@ function ThreadView({
                       borderRadius: isOwn
                         ? "18px 18px 4px 18px"
                         : "18px 18px 18px 4px",
+                      // My messages are grey, other's messages are their color
                       background: isOwn
                         ? isPrayerRequest
-                          ? "#7c3aed" // Vivid purple for sent prayer requests
-                          : darkenColor(
-                              thread.participantColor || "#5a8a4a",
-                              20
-                            ) // Darken participant's color for better contrast
+                          ? "#7c3aed" // Vivid purple for my prayer requests
+                          : "var(--surface-secondary)" // Grey for my normal messages
                         : isPrayerRequest
                         ? "rgba(124, 58, 237, 0.25)" // Soft purple for received prayer requests
-                        : "var(--surface-secondary)",
-                      color: isOwn ? "#ffffff" : "var(--text-bright)",
-                      textShadow: isOwn ? "0 1px 2px rgba(0,0,0,0.2)" : "none",
+                        : thread.type === "group"
+                        ? darkenColor(sender?.avatarColor || thread.participantColor || "#5a8a4a", 20) // Sender's color for group
+                        : darkenColor(thread.participantColor || "#5a8a4a", 20), // Participant's color for private
+                      color: isOwn
+                        ? isPrayerRequest
+                          ? "#ffffff"
+                          : "var(--text-bright)" // Dark text on grey for my messages
+                        : "#ffffff", // White text on colored messages from others
+                      textShadow: !isOwn || isPrayerRequest ? "0 1px 2px rgba(0,0,0,0.2)" : "none",
                       border:
                         isPrayerRequest && !isOwn
                           ? "1px solid rgba(139, 92, 246, 0.5)"
@@ -2613,8 +3136,13 @@ function ThreadView({
                         fontSize: "var(--text-base)",
                         lineHeight: "1.5",
                         fontWeight: 600,
-                        color: isOwn ? "#ffffff" : "var(--text-bright)",
-                        textShadow: isOwn
+                        // Text color matches background logic
+                        color: isOwn
+                          ? isPrayerRequest
+                            ? "#ffffff"
+                            : "var(--text-bright)" // Dark text on grey for my normal messages
+                          : "#ffffff", // White text on colored messages from others
+                        textShadow: !isOwn || isPrayerRequest
                           ? "0 1px 2px rgba(0,0,0,0.15)"
                           : "none",
                       }}

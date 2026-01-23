@@ -26,38 +26,39 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Check if user is a member of this group
-    const { data: membership } = await supabase
-      .from("conversation_members")
-      .select("role")
-      .eq("conversation_id", conversationId)
-      .eq("user_id", user.id)
-      .single();
+    // Check if user has access using RPC (RLS blocks direct table access)
+    const { data: hasAccess } = await supabase.rpc("user_has_conversation_access", {
+      p_user_id: user.id,
+      p_conversation_id: conversationId,
+    });
 
-    if (!membership) {
+    if (!hasAccess) {
       return NextResponse.json(
         { error: "Not a member of this group" },
         { status: 403 }
       );
     }
 
-    // Get group details
-    const { data: group, error } = await supabase
-      .from("conversations")
-      .select("*")
-      .eq("id", conversationId)
-      .eq("type", "group")
-      .single();
+    // Get group members to determine role and count
+    const { data: members } = await supabase.rpc("get_group_members", {
+      p_conversation_id: conversationId,
+    });
 
-    if (error || !group) {
+    const currentUserMember = (members || []).find(
+      (m: { user_id: string }) => m.user_id === user.id
+    );
+    const isAdmin = currentUserMember?.role === "admin";
+
+    // Get group details using RPC
+    const { data: groupData } = await supabase.rpc("get_conversation_details", {
+      p_conversation_id: conversationId,
+    });
+
+    if (!groupData || groupData.length === 0) {
       return NextResponse.json({ error: "Group not found" }, { status: 404 });
     }
 
-    // Get member count
-    const { count } = await supabase
-      .from("conversation_members")
-      .select("*", { count: "exact", head: true })
-      .eq("conversation_id", conversationId);
+    const group = groupData[0];
 
     return NextResponse.json({
       group: {
@@ -65,11 +66,11 @@ export async function GET(
         groupName: group.group_name,
         groupAvatarPath: group.group_avatar_path,
         creatorId: group.creator_id,
-        memberCount: count || 0,
+        memberCount: members?.length || 0,
         createdAt: group.created_at,
         updatedAt: group.updated_at,
       },
-      isAdmin: membership.role === "admin",
+      isAdmin,
       isCreator: group.creator_id === user.id,
     });
   } catch (error) {
@@ -109,41 +110,38 @@ export async function PATCH(
       );
     }
 
-    // Check if user is admin of this group
-    const { data: membership } = await supabase
-      .from("conversation_members")
-      .select("role")
-      .eq("conversation_id", conversationId)
-      .eq("user_id", user.id)
-      .single();
+    // Check if user has access and get their role using RPC
+    const { data: members } = await supabase.rpc("get_group_members", {
+      p_conversation_id: conversationId,
+    });
 
-    if (!membership || membership.role !== "admin") {
+    const currentUserMember = (members || []).find(
+      (m: { user_id: string }) => m.user_id === user.id
+    );
+
+    if (!currentUserMember) {
       return NextResponse.json(
-        { error: "Only admins can update group details" },
+        { error: "Not a member of this group" },
         { status: 403 }
       );
     }
 
-    const updates: Record<string, unknown> = {
-      updated_at: new Date().toISOString(),
-    };
+    // Any member can update group name/avatar (not just admins)
+    // This makes it more collaborative
 
-    if (validation.data.groupName !== undefined) {
-      updates.group_name = validation.data.groupName;
-    }
-    if (validation.data.groupAvatarPath !== undefined) {
-      updates.group_avatar_path = validation.data.groupAvatarPath;
-    }
-
-    const { error } = await supabase
-      .from("conversations")
-      .update(updates)
-      .eq("id", conversationId);
+    // Use RPC function to update group
+    const { error } = await supabase.rpc("update_group_info", {
+      p_conversation_id: conversationId,
+      p_group_name: validation.data.groupName || null,
+      p_group_avatar_path: validation.data.groupAvatarPath !== undefined 
+        ? validation.data.groupAvatarPath 
+        : null,
+    });
 
     if (error) {
       console.error("Error updating group:", error);
       return NextResponse.json(
-        { error: "Failed to update group" },
+        { error: "Failed to update group", details: error.message },
         { status: 500 }
       );
     }

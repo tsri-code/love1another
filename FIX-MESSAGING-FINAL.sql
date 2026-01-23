@@ -417,6 +417,69 @@ END;
 $$;
 
 -- -----------------------------------------------------------------------------
+-- Function: Get messages with sender info (for group chats)
+-- Returns sender name/avatar even for removed members
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.get_conversation_messages_with_sender(
+  p_conversation_id UUID,
+  p_limit INT DEFAULT 50,
+  p_newest_first BOOLEAN DEFAULT FALSE
+)
+RETURNS TABLE (
+  id UUID,
+  conversation_id UUID,
+  sender_id UUID,
+  encrypted_content TEXT,
+  iv TEXT,
+  message_type TEXT,
+  is_read BOOLEAN,
+  created_at TIMESTAMPTZ,
+  sender_full_name TEXT,
+  sender_username TEXT,
+  sender_avatar_initials TEXT,
+  sender_avatar_color TEXT,
+  sender_avatar_path TEXT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_user_id UUID;
+BEGIN
+  v_user_id := auth.uid();
+
+  -- Check access
+  IF NOT public.user_has_conversation_access(v_user_id, p_conversation_id) THEN
+    RETURN; -- Return empty if no access
+  END IF;
+
+  RETURN QUERY
+  SELECT
+    m.id::UUID,
+    m.conversation_id::UUID,
+    m.sender_id::UUID,
+    m.encrypted_content::TEXT,
+    m.iv::TEXT,
+    m.message_type::TEXT,
+    m.is_read::BOOLEAN,
+    m.created_at::TIMESTAMPTZ,
+    COALESCE(u.raw_user_meta_data->>'full_name', u.email, 'Unknown User')::TEXT as sender_full_name,
+    (u.raw_user_meta_data->>'username')::TEXT as sender_username,
+    (u.raw_user_meta_data->>'avatar_initials')::TEXT as sender_avatar_initials,
+    COALESCE(u.raw_user_meta_data->>'avatar_color', '#7c9bb8')::TEXT as sender_avatar_color,
+    (u.raw_user_meta_data->>'avatar_path')::TEXT as sender_avatar_path
+  FROM messages m
+  LEFT JOIN auth.users u ON u.id = m.sender_id
+  WHERE m.conversation_id = p_conversation_id
+  ORDER BY
+    CASE WHEN p_newest_first THEN m.created_at END DESC,
+    CASE WHEN NOT p_newest_first THEN m.created_at END ASC
+  LIMIT p_limit;
+END;
+$$;
+
+-- -----------------------------------------------------------------------------
 -- Function: Send a message (message or prayer_request)
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.send_message(
@@ -816,13 +879,20 @@ END;
 $$;
 
 -- -----------------------------------------------------------------------------
--- Function: Get group members
+-- Function: Get group members with full user info
+-- Note: Explicit type casts are required to match the return table structure
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.get_group_members(p_conversation_id UUID)
 RETURNS TABLE (
   user_id UUID,
   role TEXT,
-  joined_at TIMESTAMPTZ
+  joined_at TIMESTAMPTZ,
+  email TEXT,
+  full_name TEXT,
+  username TEXT,
+  avatar_initials TEXT,
+  avatar_color TEXT,
+  avatar_path TEXT
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -839,10 +909,101 @@ BEGIN
   END IF;
 
   RETURN QUERY
-  SELECT cm.user_id, cm.role, cm.joined_at
+  SELECT
+    cm.user_id::UUID,
+    cm.role::TEXT,
+    cm.joined_at::TIMESTAMPTZ,
+    u.email::TEXT,
+    COALESCE(u.raw_user_meta_data->>'full_name', u.email)::TEXT as full_name,
+    (u.raw_user_meta_data->>'username')::TEXT as username,
+    (u.raw_user_meta_data->>'avatar_initials')::TEXT as avatar_initials,
+    COALESCE(u.raw_user_meta_data->>'avatar_color', '#7c9bb8')::TEXT as avatar_color,
+    (u.raw_user_meta_data->>'avatar_path')::TEXT as avatar_path
   FROM conversation_members cm
+  INNER JOIN auth.users u ON u.id = cm.user_id
   WHERE cm.conversation_id = p_conversation_id
   ORDER BY cm.joined_at;
+END;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Function: Get conversation details
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.get_conversation_details(p_conversation_id UUID)
+RETURNS TABLE (
+  id UUID,
+  type TEXT,
+  group_name TEXT,
+  group_avatar_path TEXT,
+  creator_id UUID,
+  created_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_user_id UUID;
+BEGIN
+  v_user_id := auth.uid();
+
+  -- Check if user has access to this conversation
+  IF NOT public.user_has_conversation_access(v_user_id, p_conversation_id) THEN
+    RETURN;
+  END IF;
+
+  RETURN QUERY
+  SELECT
+    c.id::UUID,
+    c.type::TEXT,
+    c.group_name::TEXT,
+    c.group_avatar_path::TEXT,
+    c.creator_id::UUID,
+    c.created_at::TIMESTAMPTZ,
+    c.updated_at::TIMESTAMPTZ
+  FROM conversations c
+  WHERE c.id = p_conversation_id;
+END;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Function: Update group info (name and/or avatar)
+-- Any member can update group info
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.update_group_info(
+  p_conversation_id UUID,
+  p_group_name TEXT DEFAULT NULL,
+  p_group_avatar_path TEXT DEFAULT NULL
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_user_id UUID;
+BEGIN
+  v_user_id := auth.uid();
+
+  -- Check if user has access to this conversation
+  IF NOT public.user_has_conversation_access(v_user_id, p_conversation_id) THEN
+    RETURN FALSE;
+  END IF;
+
+  -- Update the group with provided values
+  UPDATE conversations
+  SET
+    group_name = COALESCE(p_group_name, group_name),
+    group_avatar_path = CASE
+      WHEN p_group_avatar_path IS NOT NULL THEN p_group_avatar_path
+      ELSE group_avatar_path
+    END,
+    updated_at = NOW()
+  WHERE id = p_conversation_id
+    AND type = 'group';
+
+  RETURN TRUE;
 END;
 $$;
 
@@ -854,6 +1015,7 @@ GRANT EXECUTE ON FUNCTION public.user_has_conversation_access TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_user_conversations TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_or_create_private_conversation TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_conversation_messages TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_conversation_messages_with_sender TO authenticated;
 GRANT EXECUTE ON FUNCTION public.send_message TO authenticated;
 GRANT EXECUTE ON FUNCTION public.mark_messages_read TO authenticated;
 GRANT EXECUTE ON FUNCTION public.delete_message TO authenticated;
@@ -863,6 +1025,8 @@ GRANT EXECUTE ON FUNCTION public.get_user_group_conversations TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_group_members TO authenticated;
 GRANT EXECUTE ON FUNCTION public.add_group_member TO authenticated;
 GRANT EXECUTE ON FUNCTION public.remove_group_member TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_conversation_details TO authenticated;
+GRANT EXECUTE ON FUNCTION public.update_group_info TO authenticated;
 
 -- =============================================================================
 -- STEP 7: REFRESH POSTGREST SCHEMA CACHE

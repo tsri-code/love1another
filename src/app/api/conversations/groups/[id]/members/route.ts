@@ -26,15 +26,13 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Check if user is a member of this group
-    const { data: membership } = await supabase
-      .from("conversation_members")
-      .select("*")
-      .eq("conversation_id", conversationId)
-      .eq("user_id", user.id)
-      .single();
+    // Check if user has access to this conversation using RPC (not direct table query due to RLS)
+    const { data: hasAccess } = await supabase.rpc("user_has_conversation_access", {
+      p_user_id: user.id,
+      p_conversation_id: conversationId,
+    });
 
-    if (!membership) {
+    if (!hasAccess) {
       return NextResponse.json(
         { error: "Not a member of this group" },
         { status: 403 }
@@ -47,12 +45,22 @@ export async function GET(
     });
 
     if (error) {
-      console.error("Error fetching members:", error);
+      console.error("Error fetching members - full error:", JSON.stringify(error, null, 2));
+      console.error("Error code:", error.code);
+      console.error("Error message:", error.message);
+      console.error("Error details:", error.details);
+      console.error("Error hint:", error.hint);
       return NextResponse.json(
-        { error: "Failed to fetch members" },
+        { error: "Failed to fetch members", details: error.message, code: error.code },
         { status: 500 }
       );
     }
+
+    // Determine if current user is admin by checking the members list
+    const currentUserMember = (members || []).find(
+      (m: { user_id: string }) => m.user_id === user.id
+    );
+    const isAdmin = currentUserMember?.role === "admin";
 
     return NextResponse.json({
       members: (members || []).map((m: {
@@ -76,7 +84,7 @@ export async function GET(
         avatarColor: m.avatar_color,
         avatarPath: m.avatar_path,
       })),
-      isAdmin: membership.role === "admin",
+      isAdmin,
     });
   } catch (error) {
     console.error("Error in GET /api/conversations/groups/[id]/members:", error);

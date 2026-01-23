@@ -87,6 +87,14 @@ export interface Message {
   created_at: string;
 }
 
+export interface MessageWithSender extends Message {
+  sender_full_name: string;
+  sender_username: string | null;
+  sender_avatar_initials: string | null;
+  sender_avatar_color: string;
+  sender_avatar_path: string | null;
+}
+
 export interface UserKeys {
   id: string;
   user_id: string;
@@ -937,6 +945,32 @@ export async function getMessages(
   }
 
   return (data || []) as Message[];
+}
+
+/**
+ * Get messages with sender info for a conversation
+ * Uses RPC function that includes sender details (name, avatar, etc.)
+ * This works even for removed group members
+ */
+export async function getMessagesWithSender(
+  conversationId: string,
+  limit = 50,
+  newestFirst = false
+): Promise<MessageWithSender[]> {
+  const supabase = await createServerSupabaseClient();
+
+  const { data, error } = await supabase.rpc("get_conversation_messages_with_sender", {
+    p_conversation_id: conversationId,
+    p_limit: limit,
+    p_newest_first: newestFirst,
+  });
+
+  if (error) {
+    console.error("Error fetching messages with sender:", error);
+    throw error;
+  }
+
+  return (data || []) as MessageWithSender[];
 }
 
 /**

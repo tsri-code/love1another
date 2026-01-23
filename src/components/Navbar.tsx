@@ -364,6 +364,7 @@ export function Navbar({
               How to Use
             </button>
 
+            {/* Donate button hidden for now
             <button
               className="dropdown-item"
               onClick={() => {
@@ -386,6 +387,7 @@ export function Navbar({
               </svg>
               Donate
             </button>
+            */}
 
             <div className="divider" style={{ margin: 0 }} />
 

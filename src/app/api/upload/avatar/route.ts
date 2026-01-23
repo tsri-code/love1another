@@ -1,6 +1,6 @@
 /**
  * Avatar Upload API
- * 
+ *
  * Uploads avatar images to Supabase Storage and returns the public URL.
  * This is the proper way to handle images - NOT storing base64 in metadata.
  */
@@ -11,18 +11,22 @@ import { createServerSupabaseClient } from "@/lib/supabase-server";
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createServerSupabaseClient();
-    
+
     // Get authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
+
     if (authError || !user) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
-    const type = formData.get("type") as string || "profile"; // "profile" or "user"
+    const type = formData.get("type") as string || "profile"; // "profile", "user", or "group"
     const entityId = formData.get("entityId") as string || user.id;
+    const groupId = formData.get("groupId") as string || null;
+
+    // For group avatars, use groupId as the entity
+    const finalEntityId = type === "group" && groupId ? groupId : entityId;
 
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
@@ -40,20 +44,25 @@ export async function POST(request: NextRequest) {
 
     // Generate unique filename
     const extension = file.type.split("/")[1] || "jpg";
-    const filename = `${type}/${entityId}/${Date.now()}.${extension}`;
+    const filename = `${type}/${finalEntityId}/${Date.now()}.${extension}`;
 
     // Convert file to buffer
     const arrayBuffer = await file.arrayBuffer();
     const buffer = new Uint8Array(arrayBuffer);
 
     // Delete any existing avatars for this entity (cleanup old files)
-    const { data: existingFiles } = await supabase.storage
-      .from("avatars")
-      .list(`${type}/${entityId}`);
-    
-    if (existingFiles && existingFiles.length > 0) {
-      const filesToDelete = existingFiles.map(f => `${type}/${entityId}/${f.name}`);
-      await supabase.storage.from("avatars").remove(filesToDelete);
+    // Skip cleanup errors - folder might not exist yet
+    try {
+      const { data: existingFiles } = await supabase.storage
+        .from("avatars")
+        .list(`${type}/${finalEntityId}`);
+
+      if (existingFiles && existingFiles.length > 0) {
+        const filesToDelete = existingFiles.map(f => `${type}/${finalEntityId}/${f.name}`);
+        await supabase.storage.from("avatars").remove(filesToDelete);
+      }
+    } catch (listError) {
+      console.log("Note: Could not list existing files (folder may not exist yet):", listError);
     }
 
     // Upload to Supabase Storage
@@ -65,9 +74,11 @@ export async function POST(request: NextRequest) {
       });
 
     if (uploadError) {
-      console.error("Upload error:", uploadError);
+      console.error("Upload error:", JSON.stringify(uploadError, null, 2));
+      console.error("Upload error message:", uploadError.message);
+      console.error("Attempted path:", filename);
       return NextResponse.json(
-        { error: "Failed to upload image" },
+        { error: "Failed to upload image", details: uploadError.message },
         { status: 500 }
       );
     }

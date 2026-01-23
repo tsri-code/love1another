@@ -726,8 +726,8 @@ a:hover {
   bottom: max(24px, env(safe-area-inset-bottom, 24px));
   right: 24px;
   width: min(520px, calc(100vw - 48px));
-  max-height: min(80vh, calc(100vh - 100px));
-  min-height: 450px;
+  max-height: min(85vh, calc(100vh - 80px));
+  min-height: 500px;
   border-radius: var(--card-radius);
   box-shadow: var(--shadow-xl);
   transform-origin: bottom right;
@@ -1611,7 +1611,7 @@ a:hover {
     max-height: 92vh;
     border-radius: var(--card-radius) var(--card-radius) 0 0;
   }
-  
+
   .modal-container-lg {
     max-width: 100%;
   }
