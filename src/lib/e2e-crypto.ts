@@ -557,7 +557,9 @@ export async function unlockUserKeys(
 
     return true;
   } catch (error) {
-    console.error("Failed to unlock user keys:", error);
+    // This can happen if password changed or keys are from a different encryption setup
+    // Log as warning since it's often expected and handled gracefully
+    console.warn("Could not unlock legacy keys (this may be expected if password was reset):", error);
     return false;
   }
 }
@@ -931,13 +933,24 @@ export async function encryptPrayersAuto(
   // Try DEK first (preferred for migrated users)
   const dek = await getStoredDEK(userId);
   if (dek) {
-    return encryptPrayersWithDEK(prayers, userId);
+    // Use DEK directly instead of calling encryptPrayersWithDEK to avoid double lookup
+    const plaintext = JSON.stringify(prayers);
+    const encrypted = await encryptWithAES(plaintext, dek);
+    return {
+      encrypted: encrypted.ciphertext,
+      iv: encrypted.iv,
+    };
   }
 
   // Fall back to legacy prayer key
   const prayerKey = await getStoredPrayerKey(userId);
   if (prayerKey) {
-    return encryptPrayersWithCachedKey(prayers, userId);
+    const plaintext = JSON.stringify(prayers);
+    const encrypted = await encryptWithAES(plaintext, prayerKey);
+    return {
+      encrypted: encrypted.ciphertext,
+      iv: encrypted.iv,
+    };
   }
 
   throw new Error("No encryption keys available. Please log in again.");
@@ -960,9 +973,24 @@ export async function decryptPrayersAuto(
   userId: string,
   version?: "legacy_v1" | "e2ee_v2"
 ): Promise<object> {
+  const encrypted: EncryptedData = {
+    ciphertext: encryptedBase64,
+    iv: ivBase64,
+  };
+
+  // Helper to decrypt with a key
+  const decryptWith = async (key: CryptoKey): Promise<object> => {
+    const plaintext = await decryptWithAES(encrypted, key);
+    return JSON.parse(plaintext);
+  };
+
   // If version is specified as e2ee_v2, use DEK
   if (version === "e2ee_v2") {
-    return decryptPrayersWithDEK(encryptedBase64, ivBase64, userId);
+    const dek = await getStoredDEK(userId);
+    if (!dek) {
+      throw new Error("DEK not available. Please log in again.");
+    }
+    return decryptWith(dek);
   }
 
   // If version is legacy_v1 or we have a salt, try legacy first
@@ -971,7 +999,7 @@ export async function decryptPrayersAuto(
     const dek = await getStoredDEK(userId);
     if (dek) {
       try {
-        return await decryptPrayersWithDEK(encryptedBase64, ivBase64, userId);
+        return await decryptWith(dek);
       } catch {
         // Fall through to legacy
       }
@@ -981,12 +1009,7 @@ export async function decryptPrayersAuto(
     const prayerKey = await getStoredPrayerKey(userId);
     if (prayerKey) {
       try {
-        const encrypted: EncryptedData = {
-          ciphertext: encryptedBase64,
-          iv: ivBase64,
-        };
-        const plaintext = await decryptWithAES(encrypted, prayerKey);
-        return JSON.parse(plaintext);
+        return await decryptWith(prayerKey);
       } catch {
         throw new Error("Failed to decrypt prayers. Keys may have changed.");
       }
@@ -999,7 +1022,7 @@ export async function decryptPrayersAuto(
   const dek = await getStoredDEK(userId);
   if (dek) {
     try {
-      return await decryptPrayersWithDEK(encryptedBase64, ivBase64, userId);
+      return await decryptWith(dek);
     } catch {
       // Fall through to legacy
     }
@@ -1007,12 +1030,7 @@ export async function decryptPrayersAuto(
 
   const prayerKey = await getStoredPrayerKey(userId);
   if (prayerKey) {
-    const encrypted: EncryptedData = {
-      ciphertext: encryptedBase64,
-      iv: ivBase64,
-    };
-    const plaintext = await decryptWithAES(encrypted, prayerKey);
-    return JSON.parse(plaintext);
+    return await decryptWith(prayerKey);
   }
 
   throw new Error("No decryption keys available. Please log in again.");

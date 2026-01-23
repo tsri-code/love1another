@@ -21,7 +21,6 @@ export function RecoverySetup({
   const [copied, setCopied] = useState(false);
   const [confirmationWord, setConfirmationWord] = useState("");
 
-  // Get the last word for confirmation
   const words = recoveryCode.split(" ");
   const lastWord = words[words.length - 1]?.toLowerCase() || "";
   const isConfirmed = confirmationWord.toLowerCase().trim() === lastWord;
@@ -32,7 +31,6 @@ export function RecoverySetup({
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Fallback for browsers without clipboard API
       const textArea = document.createElement("textarea");
       textArea.value = recoveryCode;
       document.body.appendChild(textArea);
@@ -69,201 +67,285 @@ Generated: ${new Date().toISOString()}`;
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 9999,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "16px",
+        backgroundColor: "rgba(0, 0, 0, 0.8)",
+        backdropFilter: "blur(4px)",
+      }}
+    >
       <div
-        className="w-full max-w-md rounded-2xl p-6 md:p-8"
         style={{
-          backgroundColor: "var(--surface-card)",
-          boxShadow: "var(--shadow-lg)",
+          width: "100%",
+          maxWidth: "460px",
+          maxHeight: "90vh",
+          backgroundColor: "var(--surface-primary)",
+          borderRadius: "16px",
+          boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)",
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
         }}
       >
         {/* Header */}
-        <div className="text-center mb-6">
-          <div
-            className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4"
-            style={{
-              background: "linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%)",
-            }}
-          >
-            <svg
-              className="w-8 h-8 text-white"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-              />
-            </svg>
-          </div>
-          <h2
-            className="text-xl md:text-2xl font-semibold mb-2"
-            style={{ color: "var(--text-primary)" }}
-          >
-            Save Your Recovery Code
-          </h2>
-          <p
-            className="text-sm md:text-base"
-            style={{ color: "var(--text-secondary)" }}
-          >
-            This is your only way to restore encrypted prayers and messages if you forget your password.
-          </p>
-        </div>
-
-        {/* Critical Warning */}
         <div
-          className="rounded-lg p-4 mb-6"
           style={{
-            backgroundColor: "rgba(239, 68, 68, 0.1)",
-            border: "1px solid var(--error)",
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            padding: "24px 24px 16px",
+            flexShrink: 0,
           }}
         >
-          <div className="flex gap-3">
-            <svg
-              className="w-5 h-5 flex-shrink-0 mt-0.5"
-              style={{ color: "var(--error)" }}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+          <div style={{ flex: 1 }}>
+            <h3
+              style={{
+                fontSize: "18px",
+                fontWeight: 600,
+                color: "var(--text-primary)",
+                marginBottom: "4px",
+              }}
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-              />
-            </svg>
-            <div>
-              <p
-                className="text-sm font-medium mb-1"
-                style={{ color: "var(--error)" }}
-              >
-                Important: Save this code securely
-              </p>
-              <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                If you lose both your password AND this code, your encrypted data is permanently inaccessible. There is no way to recover it.
-              </p>
-            </div>
+              Save Your Recovery Code
+            </h3>
+            <p
+              style={{
+                fontSize: "14px",
+                color: "var(--text-muted)",
+                lineHeight: 1.5,
+              }}
+            >
+              This is your only way to restore encrypted prayers and messages if you forget your password.
+            </p>
           </div>
-        </div>
-
-        {/* Recovery Code Display */}
-        <div
-          className="rounded-xl p-4 mb-4 text-center"
-          style={{
-            backgroundColor: "var(--surface-elevated)",
-            border: "2px dashed var(--border-medium)",
-          }}
-        >
-          <p
-            className="text-lg md:text-xl font-mono font-medium tracking-wide"
-            style={{ color: "var(--text-primary)" }}
-          >
-            {recoveryCode}
-          </p>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex gap-3 mb-6">
-          <button
-            onClick={handleCopy}
-            className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-medium transition-all"
-            style={{
-              backgroundColor: "var(--surface-elevated)",
-              color: "var(--text-primary)",
-              border: "1px solid var(--border-light)",
-            }}
-          >
-            {copied ? (
-              <>
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                Copied
-              </>
-            ) : (
-              <>
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-                Copy
-              </>
-            )}
-          </button>
-          <button
-            onClick={handleDownload}
-            className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-medium transition-all"
-            style={{
-              backgroundColor: "var(--surface-elevated)",
-              color: "var(--text-primary)",
-              border: "1px solid var(--border-light)",
-            }}
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            Download
-          </button>
-        </div>
-
-        {/* Warning */}
-        <Alert variant="warning" icon={<WarningIcon />} className="mb-6">
-          <AlertDescription>
-            Write this down and store it safely. You will not be able to see it again after closing this screen.
-          </AlertDescription>
-        </Alert>
-
-        {/* Confirmation - Type Last Word */}
-        <div className="mb-6">
-          <label
-            className="block text-sm font-medium mb-2"
-            style={{ color: "var(--text-primary)" }}
-          >
-            To confirm you saved it, type the LAST word of your recovery code:
-          </label>
-          <input
-            type="text"
-            value={confirmationWord}
-            onChange={(e) => setConfirmationWord(e.target.value)}
-            placeholder="Type last word..."
-            className="w-full px-4 py-3 rounded-xl text-center font-mono"
-            style={{
-              backgroundColor: "var(--surface-elevated)",
-              color: "var(--text-primary)",
-              border: `2px solid ${isConfirmed ? "var(--success)" : "var(--border-light)"}`,
-            }}
-          />
-          {confirmationWord && !isConfirmed && (
-            <p
-              className="text-xs mt-1 text-center"
-              style={{ color: "var(--text-muted)" }}
-            >
-              Check your recovery code and try again
-            </p>
-          )}
-          {isConfirmed && (
-            <p
-              className="text-xs mt-1 text-center"
-              style={{ color: "var(--success)" }}
-            >
-              Confirmed! Click Continue to proceed.
-            </p>
-          )}
-        </div>
-
-        {/* Continue Button */}
-        <div className="flex gap-3">
           {onCancel && (
             <button
               onClick={onCancel}
-              className="flex-1 py-3 px-4 rounded-xl font-medium transition-all"
               style={{
+                padding: "8px",
+                marginLeft: "16px",
+                marginTop: "-4px",
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                color: "var(--text-muted)",
+                borderRadius: "8px",
+              }}
+            >
+              <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        {/* Body */}
+        <div
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            padding: "8px 24px 24px",
+          }}
+        >
+          {/* Critical Warning */}
+          <div
+            style={{
+              padding: "14px",
+              marginBottom: "20px",
+              borderRadius: "12px",
+              backgroundColor: "var(--error-light)",
+              border: "1px solid var(--error)",
+            }}
+          >
+            <div style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
+              <svg
+                style={{ width: "20px", height: "20px", flexShrink: 0, color: "var(--error)" }}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <div>
+                <p style={{ fontSize: "14px", fontWeight: 600, color: "var(--error)", marginBottom: "2px" }}>
+                  Important: Save this code securely
+                </p>
+                <p style={{ fontSize: "13px", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                  If you lose both your password AND this code, your encrypted data is permanently inaccessible.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Recovery Code Display */}
+          <div
+            style={{
+              padding: "20px",
+              marginBottom: "16px",
+              backgroundColor: "var(--surface-elevated)",
+              border: "2px dashed var(--border-medium)",
+              borderRadius: "12px",
+              textAlign: "center",
+            }}
+          >
+            <p
+              style={{
+                fontFamily: "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace",
+                fontSize: "18px",
+                fontWeight: 600,
+                color: "var(--text-primary)",
+                letterSpacing: "0.05em",
+                wordSpacing: "0.15em",
+                lineHeight: 1.5,
+              }}
+            >
+              {recoveryCode}
+            </p>
+          </div>
+
+          {/* Action Buttons */}
+          <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
+            <button
+              onClick={handleCopy}
+              style={{
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "8px",
+                padding: "12px 16px",
+                fontSize: "14px",
+                fontWeight: 600,
+                borderRadius: "10px",
+                backgroundColor: copied ? "var(--success-light)" : "var(--surface-elevated)",
+                color: copied ? "var(--success)" : "var(--text-primary)",
+                border: `1px solid ${copied ? "var(--success)" : "var(--border-medium)"}`,
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+              }}
+            >
+              {copied ? (
+                <>
+                  <svg style={{ width: "18px", height: "18px" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Copied!
+                </>
+              ) : (
+                <>
+                  <svg style={{ width: "18px", height: "18px" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  Copy
+                </>
+              )}
+            </button>
+            <button
+              onClick={handleDownload}
+              style={{
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "8px",
+                padding: "12px 16px",
+                fontSize: "14px",
+                fontWeight: 600,
+                borderRadius: "10px",
                 backgroundColor: "var(--surface-elevated)",
-                color: "var(--text-secondary)",
-                border: "1px solid var(--border-light)",
+                color: "var(--text-primary)",
+                border: "1px solid var(--border-medium)",
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+              }}
+            >
+              <svg style={{ width: "18px", height: "18px" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Download
+            </button>
+          </div>
+
+          {/* Warning */}
+          <Alert variant="warning" icon={<WarningIcon />} className="mb-6">
+            <AlertDescription>
+              Write this down and store it safely. You will not be able to see it again after closing this screen.
+            </AlertDescription>
+          </Alert>
+
+          {/* Confirmation */}
+          <div style={{ marginTop: "20px" }}>
+            <label
+              style={{
+                display: "block",
+                fontSize: "14px",
+                fontWeight: 500,
+                color: "var(--text-primary)",
+                marginBottom: "8px",
+              }}
+            >
+              To confirm you saved it, type the <strong>LAST word</strong> of your recovery code:
+            </label>
+            <input
+              type="text"
+              value={confirmationWord}
+              onChange={(e) => setConfirmationWord(e.target.value)}
+              placeholder="Type last word..."
+              style={{
+                width: "100%",
+                padding: "14px 16px",
+                fontSize: "15px",
+                fontFamily: "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace",
+                textAlign: "center",
+                borderRadius: "10px",
+                backgroundColor: "var(--surface-elevated)",
+                color: "var(--text-primary)",
+                border: `1px solid ${isConfirmed ? "var(--success)" : "var(--border-medium)"}`,
+                transition: "border-color 0.2s ease",
+              }}
+            />
+            {confirmationWord && !isConfirmed && (
+              <p style={{ fontSize: "13px", color: "var(--text-muted)", textAlign: "center", marginTop: "6px" }}>
+                Check your recovery code and try again
+              </p>
+            )}
+            {isConfirmed && (
+              <p style={{ fontSize: "13px", color: "var(--success)", textAlign: "center", marginTop: "6px" }}>
+                Confirmed! Click Continue to proceed.
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div
+          style={{
+            display: "flex",
+            gap: "12px",
+            padding: "16px 24px 24px",
+            borderTop: "1px solid var(--border-light)",
+            flexShrink: 0,
+          }}
+        >
+          {onCancel && (
+            <button
+              onClick={onCancel}
+              style={{
+                flex: 1,
+                padding: "14px 20px",
+                fontSize: "15px",
+                fontWeight: 500,
+                backgroundColor: "transparent",
+                border: "1px solid var(--border-medium)",
+                borderRadius: "10px",
+                color: "var(--text-primary)",
+                cursor: "pointer",
               }}
             >
               Cancel
@@ -272,14 +354,17 @@ Generated: ${new Date().toISOString()}`;
           <button
             onClick={onComplete}
             disabled={!isConfirmed}
-            className={`flex-1 py-3 px-4 rounded-xl font-medium transition-all ${
-              !isConfirmed ? "opacity-50 cursor-not-allowed" : ""
-            }`}
             style={{
-              background: isConfirmed
-                ? "linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%)"
-                : "var(--surface-elevated)",
-              color: isConfirmed ? "white" : "var(--text-muted)",
+              flex: 1,
+              padding: "14px 20px",
+              fontSize: "15px",
+              fontWeight: 600,
+              backgroundColor: "var(--accent-primary)",
+              border: "none",
+              borderRadius: "10px",
+              color: "white",
+              cursor: isConfirmed ? "pointer" : "not-allowed",
+              opacity: isConfirmed ? 1 : 0.5,
             }}
           >
             Continue
@@ -461,66 +546,222 @@ export function ViewRecoveryCode({ recoveryCode, onClose }: ViewRecoveryCodeProp
     }
   };
 
+  const progress = (timeLeft / 60) * 100;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 9999,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "16px",
+        backgroundColor: "rgba(0, 0, 0, 0.8)",
+        backdropFilter: "blur(4px)",
+      }}
+    >
       <div
-        className="w-full max-w-md rounded-2xl p-6"
         style={{
-          backgroundColor: "var(--surface-card)",
-          boxShadow: "var(--shadow-lg)",
+          width: "100%",
+          maxWidth: "420px",
+          backgroundColor: "var(--surface-primary)",
+          borderRadius: "16px",
+          boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)",
+          overflow: "hidden",
         }}
       >
-        <div className="text-center mb-4">
-          <h3
-            className="text-lg font-semibold mb-2"
-            style={{ color: "var(--text-primary)" }}
-          >
-            Your Recovery Code
-          </h3>
-          <p
-            className="text-sm"
-            style={{ color: "var(--text-secondary)" }}
-          >
-            This will hide automatically in {timeLeft} seconds
-          </p>
-        </div>
-
+        {/* Header */}
         <div
-          className="rounded-xl p-4 mb-4 text-center"
           style={{
-            backgroundColor: "var(--surface-elevated)",
-            border: "2px dashed var(--border-medium)",
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            padding: "24px 24px 16px",
           }}
         >
-          <p
-            className="text-lg font-mono font-medium tracking-wide"
-            style={{ color: "var(--text-primary)" }}
-          >
-            {recoveryCode}
-          </p>
-        </div>
-
-        <div className="flex gap-3">
-          <button
-            onClick={handleCopy}
-            className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-medium"
-            style={{
-              backgroundColor: "var(--surface-elevated)",
-              color: "var(--text-primary)",
-              border: "1px solid var(--border-light)",
-            }}
-          >
-            {copied ? "Copied!" : "Copy"}
-          </button>
+          <div style={{ flex: 1 }}>
+            <h3
+              style={{
+                fontSize: "18px",
+                fontWeight: 600,
+                color: "var(--text-primary)",
+                marginBottom: "4px",
+              }}
+            >
+              Your Recovery Code
+            </h3>
+            <p
+              style={{
+                fontSize: "14px",
+                color: "var(--text-muted)",
+                lineHeight: 1.5,
+              }}
+            >
+              Keep this code safe. It&apos;s your backup key to encrypted content.
+            </p>
+          </div>
           <button
             onClick={onClose}
-            className="flex-1 py-3 px-4 rounded-xl font-medium"
             style={{
-              background: "linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%)",
-              color: "white",
+              padding: "8px",
+              marginLeft: "16px",
+              marginTop: "-4px",
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              color: "var(--text-muted)",
+              borderRadius: "8px",
             }}
           >
-            Hide
+            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: "8px 24px 24px" }}>
+          {/* Timer indicator */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "10px",
+              marginBottom: "20px",
+              padding: "10px 14px",
+              borderRadius: "10px",
+              backgroundColor: timeLeft <= 15 ? "var(--error-light)" : "var(--surface-elevated)",
+              border: `1px solid ${timeLeft <= 15 ? "var(--error)" : "var(--border-light)"}`,
+              transition: "all 0.3s ease",
+            }}
+          >
+            <svg
+              style={{ width: "18px", height: "18px", color: timeLeft <= 15 ? "var(--error)" : "var(--text-muted)", flexShrink: 0 }}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span
+              style={{
+                fontSize: "14px",
+                fontWeight: 600,
+                color: timeLeft <= 15 ? "var(--error)" : "var(--text-secondary)",
+              }}
+            >
+              Auto-hiding in {timeLeft}s
+            </span>
+            <div
+              style={{
+                flex: 1,
+                height: "4px",
+                backgroundColor: "var(--border-light)",
+                borderRadius: "2px",
+                overflow: "hidden",
+                maxWidth: "60px",
+              }}
+            >
+              <div
+                style={{
+                  width: `${progress}%`,
+                  height: "100%",
+                  backgroundColor: timeLeft <= 15 ? "var(--error)" : "var(--accent-primary)",
+                  transition: "width 1s linear",
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Recovery Code Display */}
+          <div
+            style={{
+              padding: "20px",
+              backgroundColor: "var(--surface-elevated)",
+              border: "2px dashed var(--border-medium)",
+              borderRadius: "12px",
+              textAlign: "center",
+            }}
+          >
+            <p
+              style={{
+                fontFamily: "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace",
+                fontSize: "18px",
+                fontWeight: 600,
+                color: "var(--text-primary)",
+                letterSpacing: "0.05em",
+                wordSpacing: "0.15em",
+                lineHeight: 1.5,
+              }}
+            >
+              {recoveryCode}
+            </p>
+          </div>
+
+          {/* Copy Button */}
+          <button
+            onClick={handleCopy}
+            style={{
+              width: "100%",
+              marginTop: "16px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "8px",
+              padding: "14px 16px",
+              fontSize: "15px",
+              fontWeight: 600,
+              borderRadius: "10px",
+              backgroundColor: copied ? "var(--success-light)" : "var(--surface-elevated)",
+              color: copied ? "var(--success)" : "var(--text-primary)",
+              border: `1px solid ${copied ? "var(--success)" : "var(--border-medium)"}`,
+              cursor: "pointer",
+              transition: "all 0.2s ease",
+            }}
+          >
+            {copied ? (
+              <>
+                <svg style={{ width: "18px", height: "18px" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                Copied to Clipboard
+              </>
+            ) : (
+              <>
+                <svg style={{ width: "18px", height: "18px" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+                Copy Recovery Code
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Footer */}
+        <div
+          style={{
+            padding: "16px 24px 24px",
+            borderTop: "1px solid var(--border-light)",
+          }}
+        >
+          <button
+            onClick={onClose}
+            style={{
+              width: "100%",
+              padding: "14px 20px",
+              fontSize: "15px",
+              fontWeight: 600,
+              backgroundColor: "var(--accent-primary)",
+              border: "none",
+              borderRadius: "10px",
+              color: "white",
+              cursor: "pointer",
+            }}
+          >
+            Hide Recovery Code
           </button>
         </div>
       </div>

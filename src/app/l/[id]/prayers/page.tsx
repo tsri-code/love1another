@@ -143,7 +143,33 @@ export default function LinkPrayerListPage({
               user.id
             )) as { prayers: Prayer[] };
 
-            setPrayers(decrypted.prayers || []);
+            const decryptedPrayers = decrypted.prayers || [];
+            setPrayers(decryptedPrayers);
+
+            // Sync prayer count if it differs from what's stored
+            const actualCount = decryptedPrayers.filter((p) => !p.answered).length;
+            const storedCount = prayersData.prayerCount ?? 0;
+            if (actualCount !== storedCount) {
+              console.log(`[Sync] Prayer count mismatch: stored=${storedCount}, actual=${actualCount}. Syncing...`);
+              // Update the count in the background (don't wait)
+              fetch(`/api/links/${id}/prayers`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  encryptedPrayers: prayersData.encryptedPrayers,
+                  encryptionIv: prayersData.encryptionIv,
+                  prayerCount: actualCount,
+                }),
+              })
+                .then((res) => {
+                  if (res.ok) {
+                    console.log(`[Sync] Prayer count synced successfully: ${actualCount}`);
+                  } else {
+                    console.warn(`[Sync] Failed to sync prayer count: ${res.status}`);
+                  }
+                })
+                .catch((err) => console.warn("[Sync] Failed to sync prayer count:", err));
+            }
           } catch (decryptError) {
             console.error("Failed to decrypt prayers:", decryptError);
             showToast("Could not decrypt prayers", "error");

@@ -48,8 +48,21 @@ export default function HomePage() {
     setUnreadMessageCount(count);
   }, []);
 
+  // Fetch on mount and when window regains focus (to refresh prayer counts)
   useEffect(() => {
     fetchPeople();
+
+    // Refresh data when page becomes visible (user navigates back)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        fetchPeople();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, []);
 
   const fetchPeople = async () => {

@@ -293,19 +293,27 @@ export default function LoginPage() {
             // No recovery code set up - data is lost, continue to app
             console.warn("DEK unlock failed and no recovery code available");
             setError("Your encrypted data could not be restored. Recovery code was not set up.");
+            // Still redirect - user can set up new encryption
+            router.push("/");
+            router.refresh();
+            return;
           }
         }
 
-        // Unlock legacy encryption keys
+        // Unlock legacy encryption keys (only for non-upgraded users)
         const userKeys = await fetchUserKeys(data.user.id);
         let unlockSucceeded = false;
 
         if (userKeys) {
           try {
-            await unlock(userKeys, password, data.user.id);
-            unlockSucceeded = true;
+            // unlock returns false if decryption fails (doesn't throw)
+            const success = await unlock(userKeys, password, data.user.id);
+            unlockSucceeded = success;
+            if (!success) {
+              console.warn("Legacy key unlock failed - keys may be from a different password");
+            }
           } catch (unlockError) {
-            // If unlock fails (e.g., after password reset), we'll handle it below
+            // If unlock throws (unexpected), handle it
             console.warn("Could not unlock encryption keys:", unlockError);
           }
         }

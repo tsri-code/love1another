@@ -75,6 +75,21 @@ export default function SettingsPage() {
   const [restoreLoading, setRestoreLoading] = useState(false);
   const [restoreError, setRestoreError] = useState("");
   const [restorePasswordInput, setRestorePasswordInput] = useState("");
+  const [showRecoveryInfoModal, setShowRecoveryInfoModal] = useState(false);
+
+  // OTP verification state
+  const [otpStep, setOtpStep] = useState<"password" | "otp">("password");
+  const [otpCode, setOtpCode] = useState("");
+  const [otpSending, setOtpSending] = useState(false);
+  const [otpError, setOtpError] = useState("");
+
+  // Share/Invite state
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareEmail, setShareEmail] = useState("");
+  const [shareSending, setShareSending] = useState(false);
+  const [shareError, setShareError] = useState("");
+  const [shareSuccess, setShareSuccess] = useState(false);
+  const [shareLinkCopied, setShareLinkCopied] = useState(false);
 
   // Load E2EE keys
   useEffect(() => {
@@ -112,35 +127,149 @@ export default function SettingsPage() {
     loadE2eeKeys();
   }, [user]);
 
-  // Handle view recovery code (password verification)
+  // Handle view recovery code (two-step: password + OTP via reauthenticate)
+  const [isVerifying, setIsVerifying] = useState(false);
+
   const handleViewRecoveryCode = async () => {
     setEncryptionError("");
+    setOtpError("");
+
+    const supabase = createClient();
+
+    if (otpStep === "password") {
+      // Step 1: Verify password and send OTP via reauthenticate
+      setOtpSending(true);
+      try {
+        // First verify the password
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email: user?.email || "",
+          password: encryptionPasswordInput,
+        });
+
+        if (signInError) {
+          setEncryptionError("Incorrect password. Please try again.");
+          setOtpSending(false);
+          return;
+        }
+
+        // Send reauthentication nonce (OTP) to user's email
+        const { error: reauthError } = await supabase.auth.reauthenticate();
+
+        if (reauthError) {
+          setEncryptionError("Failed to send verification code. Please try again.");
+          setOtpSending(false);
+          return;
+        }
+
+        // Move to OTP step
+        setOtpStep("otp");
+        showToast("Verification code sent to your email", "success");
+      } catch {
+        setEncryptionError("An error occurred. Please try again.");
+      } finally {
+        setOtpSending(false);
+      }
+    } else {
+      // Step 2: Verify OTP nonce and show recovery code
+      setIsVerifying(true);
+      try {
+        // Verify the nonce
+        const { error: verifyError } = await supabase.auth.verifyOtp({
+          email: user?.email || "",
+          token: otpCode,
+          type: "email",
+        });
+
+        if (verifyError) {
+          setOtpError("Invalid or expired code. Please try again.");
+          setIsVerifying(false);
+          return;
+        }
+
+        // Both password and OTP verified - decrypt and show recovery code
+        if (e2eeKeys) {
+          const code = await getRecoveryCode(e2eeKeys, encryptionPasswordInput);
+          setRecoveryCodeToView(code);
+        }
+
+        // Reset all inputs
+        setEncryptionPasswordInput("");
+        setOtpCode("");
+        setOtpStep("password");
+      } catch {
+        setOtpError("Failed to verify code. Please try again.");
+      } finally {
+        setIsVerifying(false);
+      }
+    }
+  };
+
+  // Reset view recovery code modal state
+  const resetViewRecoveryModal = () => {
+    setShowViewRecoveryCode(false);
+    setEncryptionPasswordInput("");
+    setOtpCode("");
+    setOtpStep("password");
+    setEncryptionError("");
+    setOtpError("");
+  };
+
+  // Handle share/invite
+  const handleShareInvite = async () => {
+    if (!shareEmail) return;
+
+    setShareSending(true);
+    setShareError("");
 
     try {
-      const supabase = createClient();
-      
-      // Verify password by attempting sign in
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: user?.email || "",
-        password: encryptionPasswordInput,
+      // Send invite email using Supabase Admin API (via our API route)
+      const res = await fetch("/api/users/invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: shareEmail,
+          inviterName: user?.fullName || "A friend",
+          inviterUsername: user?.username || "",
+        }),
       });
 
-      if (signInError) {
-        setEncryptionError("Incorrect password");
-        return;
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to send invitation");
       }
 
-      // Decrypt and show recovery code
-      if (e2eeKeys) {
-        const code = await getRecoveryCode(e2eeKeys, encryptionPasswordInput);
-        setRecoveryCodeToView(code);
-      }
-
-      // Reset password input
-      setEncryptionPasswordInput("");
-    } catch {
-      setEncryptionError("Failed to retrieve recovery code");
+      setShareSuccess(true);
+      setShareEmail("");
+      showToast("Invitation sent successfully!", "success");
+    } catch (error) {
+      setShareError(error instanceof Error ? error.message : "Failed to send invitation");
+    } finally {
+      setShareSending(false);
     }
+  };
+
+  // Copy share link to clipboard
+  const handleCopyShareLink = async () => {
+    const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+    const shareText = `Hey! Can I pray for you? Sign up on Love1Another and add me: ${user?.username || ""}`;
+    const shareUrl = `${baseUrl}/login?ref=${user?.username || ""}`;
+
+    try {
+      await navigator.clipboard.writeText(`${shareText}\n${shareUrl}`);
+      setShareLinkCopied(true);
+      showToast("Link copied to clipboard!", "success");
+      setTimeout(() => setShareLinkCopied(false), 3000);
+    } catch {
+      showToast("Failed to copy link", "error");
+    }
+  };
+
+  // Reset share modal
+  const resetShareModal = () => {
+    setShowShareModal(false);
+    setShareEmail("");
+    setShareError("");
+    setShareSuccess(false);
   };
 
   // Initialize form with user data
@@ -884,12 +1013,31 @@ export default function SettingsPage() {
                 className="flex items-center justify-between"
                 style={{ marginBottom: "var(--space-lg)" }}
               >
-                <h2
-                  className="font-serif font-semibold text-[var(--text-primary)]"
-                  style={{ fontSize: "var(--text-lg)" }}
-                >
-                  Encryption & Recovery
-                </h2>
+                <div className="flex items-center gap-3">
+                  <h2
+                    className="font-serif font-semibold text-[var(--text-primary)]"
+                    style={{ fontSize: "var(--text-lg)" }}
+                  >
+                    Encryption & Recovery
+                  </h2>
+                  <button
+                    onClick={() => setShowRecoveryInfoModal(true)}
+                    className="pulse-glow-icon flex items-center justify-center w-8 h-8 rounded-full"
+                    style={{
+                      backgroundColor: "rgba(239, 68, 68, 0.2)",
+                      border: "2px solid rgba(239, 68, 68, 0.4)",
+                    }}
+                    aria-label="Learn about recovery codes"
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      fill="#ef4444"
+                      viewBox="0 0 24 24"
+                    >
+                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                    </svg>
+                  </button>
+                </div>
               </div>
 
               <p
@@ -994,59 +1142,301 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* View Recovery Code Modal - Password Verification */}
+            {/* View Recovery Code Modal - Two-Step Verification */}
             {showViewRecoveryCode && !recoveryCodeToView && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+              <div
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  zIndex: 9999,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "16px",
+                  backgroundColor: "rgba(0, 0, 0, 0.8)",
+                  backdropFilter: "blur(4px)",
+                }}
+              >
                 <div
-                  className="w-full max-w-md rounded-2xl p-6"
                   style={{
-                    backgroundColor: "var(--surface-card)",
-                    boxShadow: "var(--shadow-lg)",
+                    width: "100%",
+                    maxWidth: "420px",
+                    backgroundColor: "var(--surface-primary)",
+                    borderRadius: "16px",
+                    boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)",
+                    overflow: "hidden",
                   }}
                 >
-                  <h3
-                    className="text-lg font-semibold mb-4"
-                    style={{ color: "var(--text-primary)" }}
+                  {/* Header */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      justifyContent: "space-between",
+                      padding: "24px 24px 0",
+                    }}
                   >
-                    Verify Your Identity
-                  </h3>
-
-                  <p
-                    className="text-sm mb-4"
-                    style={{ color: "var(--text-secondary)" }}
-                  >
-                    Enter your password to view your recovery code.
-                  </p>
-                  <PasswordInput
-                    className="input mb-4"
-                    placeholder="Enter your password"
-                    value={encryptionPasswordInput}
-                    onChange={(e) => setEncryptionPasswordInput(e.target.value)}
-                  />
-
-                  {encryptionError && (
-                    <Alert variant="destructive" icon={<AlertCircleIcon />} className="mb-4">
-                      <AlertTitle>{encryptionError}</AlertTitle>
-                    </Alert>
-                  )}
-
-                  <div className="flex gap-3">
+                    <div style={{ flex: 1 }}>
+                      <h3
+                        style={{
+                          fontSize: "18px",
+                          fontWeight: 600,
+                          color: "var(--text-primary)",
+                          marginBottom: "4px",
+                        }}
+                      >
+                        {otpStep === "password" ? "Enter Your Password" : "Enter Verification Code"}
+                      </h3>
+                      <p
+                        style={{
+                          fontSize: "14px",
+                          color: "var(--text-muted)",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        {otpStep === "password"
+                          ? "First, verify your password. We'll then send a code to your email."
+                          : `Enter the 6-digit code sent to ${user?.email}`}
+                      </p>
+                    </div>
                     <button
-                      className="flex-1 btn btn-ghost"
-                      onClick={() => {
-                        setShowViewRecoveryCode(false);
-                        setEncryptionPasswordInput("");
-                        setEncryptionError("");
+                      onClick={resetViewRecoveryModal}
+                      style={{
+                        padding: "8px",
+                        marginLeft: "16px",
+                        marginTop: "-4px",
+                        background: "transparent",
+                        border: "none",
+                        cursor: "pointer",
+                        color: "var(--text-muted)",
+                        borderRadius: "8px",
+                      }}
+                    >
+                      <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  {/* Step indicator */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "12px",
+                      padding: "20px 24px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "32px",
+                        height: "32px",
+                        borderRadius: "50%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "14px",
+                        fontWeight: 600,
+                        backgroundColor: otpStep === "password" ? "var(--accent-primary)" : "var(--success)",
+                        color: "white",
+                      }}
+                    >
+                      {otpStep === "password" ? "1" : "✓"}
+                    </div>
+                    <div
+                      style={{
+                        width: "48px",
+                        height: "2px",
+                        backgroundColor: otpStep === "otp" ? "var(--accent-primary)" : "var(--border-light)",
+                        borderRadius: "1px",
+                      }}
+                    />
+                    <div
+                      style={{
+                        width: "32px",
+                        height: "32px",
+                        borderRadius: "50%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "14px",
+                        fontWeight: 600,
+                        backgroundColor: otpStep === "otp" ? "var(--accent-primary)" : "var(--surface-elevated)",
+                        color: otpStep === "otp" ? "white" : "var(--text-muted)",
+                        border: otpStep === "otp" ? "none" : "2px solid var(--border-light)",
+                      }}
+                    >
+                      2
+                    </div>
+                  </div>
+
+                  {/* Form content */}
+                  <div style={{ padding: "0 24px 24px" }}>
+                    {otpStep === "password" ? (
+                      <div style={{ marginBottom: "16px" }}>
+                        <label
+                          style={{
+                            display: "block",
+                            fontSize: "14px",
+                            fontWeight: 500,
+                            color: "var(--text-primary)",
+                            marginBottom: "8px",
+                          }}
+                        >
+                          Your Password
+                        </label>
+                        <PasswordInput
+                          className="input w-full"
+                          placeholder="Enter your password"
+                          value={encryptionPasswordInput}
+                          onChange={(e) => setEncryptionPasswordInput(e.target.value)}
+                          disabled={otpSending}
+                        />
+                      </div>
+                    ) : (
+                      <div style={{ marginBottom: "16px" }}>
+                        <label
+                          style={{
+                            display: "block",
+                            fontSize: "14px",
+                            fontWeight: 500,
+                            color: "var(--text-primary)",
+                            marginBottom: "8px",
+                          }}
+                        >
+                          Verification Code
+                        </label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          maxLength={6}
+                          placeholder="000000"
+                          value={otpCode}
+                          onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                          autoFocus
+                          disabled={isVerifying}
+                          style={{
+                            width: "100%",
+                            padding: "14px 16px",
+                            fontSize: "24px",
+                            fontFamily: "monospace",
+                            fontWeight: 600,
+                            textAlign: "center",
+                            letterSpacing: "0.4em",
+                            backgroundColor: "var(--surface-elevated)",
+                            border: "1px solid var(--border-medium)",
+                            borderRadius: "12px",
+                            color: "var(--text-primary)",
+                          }}
+                        />
+                        <p
+                          style={{
+                            fontSize: "13px",
+                            color: "var(--text-muted)",
+                            textAlign: "center",
+                            marginTop: "12px",
+                          }}
+                        >
+                          Didn&apos;t receive the code?{" "}
+                          <button
+                            onClick={() => {
+                              setOtpStep("password");
+                              setOtpCode("");
+                              setOtpError("");
+                            }}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              color: "var(--accent-primary)",
+                              cursor: "pointer",
+                              fontWeight: 500,
+                            }}
+                          >
+                            Try again
+                          </button>
+                        </p>
+                      </div>
+                    )}
+
+                    {encryptionError && (
+                      <div style={{ marginBottom: "16px" }}>
+                        <Alert variant="destructive" icon={<AlertCircleIcon />}>
+                          <AlertTitle>{encryptionError}</AlertTitle>
+                        </Alert>
+                      </div>
+                    )}
+
+                    {otpError && (
+                      <div style={{ marginBottom: "16px" }}>
+                        <Alert variant="destructive" icon={<AlertCircleIcon />}>
+                          <AlertTitle>{otpError}</AlertTitle>
+                        </Alert>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Footer with buttons */}
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "12px",
+                      padding: "16px 24px 24px",
+                      borderTop: "1px solid var(--border-light)",
+                    }}
+                  >
+                    <button
+                      onClick={resetViewRecoveryModal}
+                      disabled={otpSending || isVerifying}
+                      style={{
+                        flex: 1,
+                        padding: "14px 20px",
+                        fontSize: "15px",
+                        fontWeight: 500,
+                        backgroundColor: "transparent",
+                        border: "1px solid var(--border-medium)",
+                        borderRadius: "10px",
+                        color: "var(--text-primary)",
+                        cursor: "pointer",
                       }}
                     >
                       Cancel
                     </button>
                     <button
-                      className="flex-1 btn btn-primary"
                       onClick={handleViewRecoveryCode}
-                      disabled={!encryptionPasswordInput}
+                      disabled={
+                        otpSending ||
+                        isVerifying ||
+                        (otpStep === "password" && !encryptionPasswordInput) ||
+                        (otpStep === "otp" && otpCode.length !== 6)
+                      }
+                      style={{
+                        flex: 1,
+                        padding: "14px 20px",
+                        fontSize: "15px",
+                        fontWeight: 600,
+                        backgroundColor: "var(--accent-primary)",
+                        border: "none",
+                        borderRadius: "10px",
+                        color: "white",
+                        cursor: "pointer",
+                        opacity:
+                          otpSending ||
+                          isVerifying ||
+                          (otpStep === "password" && !encryptionPasswordInput) ||
+                          (otpStep === "otp" && otpCode.length !== 6)
+                            ? 0.5
+                            : 1,
+                      }}
                     >
-                      View Code
+                      {otpSending
+                        ? "Sending..."
+                        : isVerifying
+                        ? "Verifying..."
+                        : otpStep === "password"
+                        ? "Send Code"
+                        : "Verify & View"}
                     </button>
                   </div>
                 </div>
@@ -1066,121 +1456,198 @@ export default function SettingsPage() {
 
             {/* Restore Encryption Modal */}
             {showRestoreEncryption && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+              <div
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  zIndex: 9999,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "16px",
+                  backgroundColor: "rgba(0, 0, 0, 0.8)",
+                  backdropFilter: "blur(4px)",
+                }}
+              >
                 <div
-                  className="w-full max-w-md rounded-2xl p-6"
                   style={{
-                    backgroundColor: "var(--surface-card)",
-                    boxShadow: "var(--shadow-lg)",
+                    width: "100%",
+                    maxWidth: "420px",
+                    backgroundColor: "var(--surface-primary)",
+                    borderRadius: "16px",
+                    boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)",
+                    overflow: "hidden",
                   }}
                 >
                   {/* Header */}
-                  <div className="text-center mb-6">
-                    <div
-                      className="inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-4"
-                      style={{
-                        background: "linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%)",
-                      }}
-                    >
-                      <svg
-                        className="w-7 h-7 text-white"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      justifyContent: "space-between",
+                      padding: "24px 24px 16px",
+                    }}
+                  >
+                    <div style={{ flex: 1 }}>
+                      <h3
+                        style={{
+                          fontSize: "18px",
+                          fontWeight: 600,
+                          color: "var(--text-primary)",
+                          marginBottom: "4px",
+                        }}
                       >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
-                        />
-                      </svg>
+                        Restore Encryption
+                      </h3>
+                      <p
+                        style={{
+                          fontSize: "14px",
+                          color: "var(--text-muted)",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        Enter your recovery code and password to restore access to your encrypted content.
+                      </p>
                     </div>
-                    <h3
-                      className="text-xl font-semibold mb-2"
-                      style={{ color: "var(--text-primary)" }}
-                    >
-                      Restore Encryption
-                    </h3>
-                    <p
-                      className="text-sm"
-                      style={{ color: "var(--text-secondary)" }}
-                    >
-                      Enter your recovery code and password to restore access to encrypted content on this device.
-                    </p>
-                  </div>
-
-                  {/* Recovery Code Input */}
-                  <div className="mb-4">
-                    <label
-                      className="block text-sm font-medium mb-2"
-                      style={{ color: "var(--text-primary)" }}
-                    >
-                      Recovery Code
-                    </label>
-                    <textarea
-                      value={restoreError ? "" : undefined}
-                      placeholder="word1 word2 word3 word4 word5 word6"
-                      rows={2}
-                      id="restore-recovery-code"
-                      className="w-full px-4 py-3 rounded-xl text-center font-mono"
-                      style={{
-                        backgroundColor: "var(--surface-elevated)",
-                        color: "var(--text-primary)",
-                        border: `1px solid ${restoreError ? "var(--error)" : "var(--border-light)"}`,
-                      }}
-                      disabled={restoreLoading}
-                    />
-                  </div>
-
-                  {/* Password Input */}
-                  <div className="mb-4">
-                    <label
-                      className="block text-sm font-medium mb-2"
-                      style={{ color: "var(--text-primary)" }}
-                    >
-                      Current Password
-                    </label>
-                    <PasswordInput
-                      className="input"
-                      placeholder="Enter your password"
-                      value={restorePasswordInput}
-                      onChange={(e) => setRestorePasswordInput(e.target.value)}
-                      disabled={restoreLoading}
-                    />
-                  </div>
-
-                  {restoreError && (
-                    <Alert variant="destructive" icon={<AlertCircleIcon />} className="mb-4">
-                      <AlertTitle>{restoreError}</AlertTitle>
-                    </Alert>
-                  )}
-
-                  {/* Buttons */}
-                  <div className="flex gap-3 mb-4">
                     <button
-                      className="flex-1 btn btn-ghost"
+                      onClick={() => {
+                        setShowRestoreEncryption(false);
+                        setRestoreError("");
+                        setRestorePasswordInput("");
+                      }}
+                      style={{
+                        padding: "8px",
+                        marginLeft: "16px",
+                        marginTop: "-4px",
+                        background: "transparent",
+                        border: "none",
+                        cursor: "pointer",
+                        color: "var(--text-muted)",
+                        borderRadius: "8px",
+                      }}
+                    >
+                      <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  {/* Form content */}
+                  <div style={{ padding: "8px 24px 24px" }}>
+                    {/* Recovery Code Input */}
+                    <div style={{ marginBottom: "20px" }}>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: "14px",
+                          fontWeight: 500,
+                          color: "var(--text-primary)",
+                          marginBottom: "8px",
+                        }}
+                      >
+                        Recovery Code
+                      </label>
+                      <textarea
+                        placeholder="word1 word2 word3 word4 word5 word6"
+                        rows={2}
+                        id="restore-recovery-code"
+                        disabled={restoreLoading}
+                        style={{
+                          width: "100%",
+                          padding: "14px 16px",
+                          fontSize: "15px",
+                          fontFamily: "monospace",
+                          textAlign: "center",
+                          backgroundColor: "var(--surface-elevated)",
+                          border: `1px solid ${restoreError ? "var(--error)" : "var(--border-medium)"}`,
+                          borderRadius: "12px",
+                          color: "var(--text-primary)",
+                          resize: "none",
+                        }}
+                      />
+                      <p
+                        style={{
+                          fontSize: "13px",
+                          color: "var(--text-muted)",
+                          marginTop: "6px",
+                        }}
+                      >
+                        Enter all 6 words separated by spaces
+                      </p>
+                    </div>
+
+                    {/* Password Input */}
+                    <div style={{ marginBottom: "20px" }}>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: "14px",
+                          fontWeight: 500,
+                          color: "var(--text-primary)",
+                          marginBottom: "8px",
+                        }}
+                      >
+                        Current Password
+                      </label>
+                      <PasswordInput
+                        className="input w-full"
+                        placeholder="Enter your password"
+                        value={restorePasswordInput}
+                        onChange={(e) => setRestorePasswordInput(e.target.value)}
+                        disabled={restoreLoading}
+                      />
+                    </div>
+
+                    {restoreError && (
+                      <div style={{ marginBottom: "16px" }}>
+                        <Alert variant="destructive" icon={<AlertCircleIcon />}>
+                          <AlertTitle>{restoreError}</AlertTitle>
+                        </Alert>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Footer with buttons */}
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "12px",
+                      padding: "16px 24px 24px",
+                      borderTop: "1px solid var(--border-light)",
+                    }}
+                  >
+                    <button
                       onClick={() => {
                         setShowRestoreEncryption(false);
                         setRestoreError("");
                         setRestorePasswordInput("");
                       }}
                       disabled={restoreLoading}
+                      style={{
+                        flex: 1,
+                        padding: "14px 20px",
+                        fontSize: "15px",
+                        fontWeight: 500,
+                        backgroundColor: "transparent",
+                        border: "1px solid var(--border-medium)",
+                        borderRadius: "10px",
+                        color: "var(--text-primary)",
+                        cursor: "pointer",
+                      }}
                     >
                       Cancel
                     </button>
                     <button
-                      className="flex-1 btn btn-primary"
                       disabled={!restorePasswordInput || restoreLoading}
                       onClick={async () => {
                         const codeInput = document.getElementById("restore-recovery-code") as HTMLTextAreaElement;
                         const code = codeInput?.value?.trim();
-                        
+
                         if (!code) {
                           setRestoreError("Please enter your recovery code");
                           return;
                         }
-                        
+
                         if (!e2eeKeys || !user) {
                           setRestoreError("Encryption keys not found. Please try again later.");
                           return;
@@ -1190,7 +1657,6 @@ export default function SettingsPage() {
                         setRestoreError("");
 
                         try {
-                          // Restore with recovery code and re-wrap with current password
                           const updatedKeys = await restoreWithRecovery(
                             e2eeKeys,
                             code.toLowerCase(),
@@ -1198,7 +1664,6 @@ export default function SettingsPage() {
                             user.id
                           );
 
-                          // Save updated E2EE keys to database
                           const res = await fetch("/api/users/e2ee-keys", {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
@@ -1216,7 +1681,6 @@ export default function SettingsPage() {
                             throw new Error("Failed to save restored encryption keys");
                           }
 
-                          // Update local state
                           setE2eeKeys({
                             userId: user.id,
                             version: e2eeKeys.version,
@@ -1242,17 +1706,604 @@ export default function SettingsPage() {
                           setRestoreLoading(false);
                         }
                       }}
+                      style={{
+                        flex: 1,
+                        padding: "14px 20px",
+                        fontSize: "15px",
+                        fontWeight: 600,
+                        backgroundColor: "var(--accent-primary)",
+                        border: "none",
+                        borderRadius: "10px",
+                        color: "white",
+                        cursor: "pointer",
+                        opacity: !restorePasswordInput || restoreLoading ? 0.5 : 1,
+                      }}
                     >
-                      {restoreLoading ? "Restoring..." : "Restore"}
+                      {restoreLoading ? "Restoring..." : "Restore Encryption"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Recovery Info Modal */}
+            {showRecoveryInfoModal && (
+              <div
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  zIndex: 9999,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "16px",
+                  backgroundColor: "rgba(0, 0, 0, 0.8)",
+                  backdropFilter: "blur(4px)",
+                }}
+              >
+                <div
+                  style={{
+                    width: "100%",
+                    maxWidth: "480px",
+                    maxHeight: "85vh",
+                    backgroundColor: "var(--surface-primary)",
+                    borderRadius: "16px",
+                    boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)",
+                    overflow: "hidden",
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
+                >
+                  {/* Header */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      justifyContent: "space-between",
+                      padding: "24px 24px 16px",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <div style={{ flex: 1 }}>
+                      <h3
+                        style={{
+                          fontSize: "18px",
+                          fontWeight: 600,
+                          color: "var(--text-primary)",
+                          marginBottom: "4px",
+                        }}
+                      >
+                        About Recovery Codes
+                      </h3>
+                      <p
+                        style={{
+                          fontSize: "14px",
+                          color: "var(--text-muted)",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        Important information about your encryption
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setShowRecoveryInfoModal(false)}
+                      style={{
+                        padding: "8px",
+                        marginLeft: "16px",
+                        marginTop: "-4px",
+                        background: "transparent",
+                        border: "none",
+                        cursor: "pointer",
+                        color: "var(--text-muted)",
+                        borderRadius: "8px",
+                      }}
+                    >
+                      <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
                     </button>
                   </div>
 
-                  <p
-                    className="text-xs text-center"
-                    style={{ color: "var(--text-muted)" }}
+                  {/* Scrollable Content */}
+                  <div
+                    style={{
+                      flex: 1,
+                      overflowY: "auto",
+                      padding: "8px 24px 24px",
+                    }}
                   >
-                    Use this if you reset your password and need to restore encrypted content on this device.
-                  </p>
+                    {/* What is a Recovery Code */}
+                    <div
+                      style={{
+                        padding: "16px",
+                        backgroundColor: "var(--surface-elevated)",
+                        borderRadius: "12px",
+                        marginBottom: "12px",
+                      }}
+                    >
+                      <h4
+                        style={{
+                          fontSize: "15px",
+                          fontWeight: 600,
+                          color: "var(--text-primary)",
+                          marginBottom: "8px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <span>🔑</span> What is a Recovery Code?
+                      </h4>
+                      <p style={{ fontSize: "14px", color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                        Your recovery code is a set of 6 words that acts as a backup key to your encrypted data.
+                        Think of it like a spare key to your house — if you lose your main key (password),
+                        you can use this to get back in.
+                      </p>
+                    </div>
+
+                    {/* Why is it Important */}
+                    <div
+                      style={{
+                        padding: "16px",
+                        backgroundColor: "var(--surface-elevated)",
+                        borderRadius: "12px",
+                        marginBottom: "12px",
+                      }}
+                    >
+                      <h4
+                        style={{
+                          fontSize: "15px",
+                          fontWeight: 600,
+                          color: "var(--text-primary)",
+                          marginBottom: "8px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <span>⚠️</span> Why is it Important?
+                      </h4>
+                      <p style={{ fontSize: "14px", color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: "8px" }}>
+                        Your encrypted content includes <strong>private messages, prayers, and personal notes</strong> — all protected so only you can read them. Not even we can access them.
+                      </p>
+                      <p style={{ fontSize: "14px", color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                        If you forget your password and need to reset it, <strong style={{ color: "var(--error)" }}>your recovery code is the ONLY way</strong> to restore access. Without it, your encrypted data would be permanently lost.
+                      </p>
+                    </div>
+
+                    {/* How to Keep it Safe */}
+                    <div
+                      style={{
+                        padding: "16px",
+                        backgroundColor: "var(--surface-elevated)",
+                        borderRadius: "12px",
+                        marginBottom: "12px",
+                      }}
+                    >
+                      <h4
+                        style={{
+                          fontSize: "15px",
+                          fontWeight: 600,
+                          color: "var(--text-primary)",
+                          marginBottom: "12px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <span>🔒</span> How to Keep it Safe
+                      </h4>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", fontSize: "14px", color: "var(--text-secondary)" }}>
+                          <span style={{ color: "var(--success)", fontWeight: 700, flexShrink: 0 }}>✓</span>
+                          <span>Write it down and store it somewhere safe</span>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", fontSize: "14px", color: "var(--text-secondary)" }}>
+                          <span style={{ color: "var(--success)", fontWeight: 700, flexShrink: 0 }}>✓</span>
+                          <span>Save it in a password manager</span>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", fontSize: "14px", color: "var(--text-secondary)" }}>
+                          <span style={{ color: "var(--error)", fontWeight: 700, flexShrink: 0 }}>✗</span>
+                          <span>Never share it with anyone</span>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", fontSize: "14px", color: "var(--text-secondary)" }}>
+                          <span style={{ color: "var(--error)", fontWeight: 700, flexShrink: 0 }}>✗</span>
+                          <span>Don&apos;t store it in an easily accessible place on your device</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Viewing Your Recovery Code */}
+                    <div
+                      style={{
+                        padding: "16px",
+                        backgroundColor: "rgba(184, 134, 11, 0.1)",
+                        border: "1px solid rgba(184, 134, 11, 0.25)",
+                        borderRadius: "12px",
+                      }}
+                    >
+                      <h4
+                        style={{
+                          fontSize: "15px",
+                          fontWeight: 600,
+                          color: "var(--text-primary)",
+                          marginBottom: "8px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <span>👁️</span> Viewing Your Recovery Code
+                      </h4>
+                      <p style={{ fontSize: "14px", color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                        For security, viewing your recovery code requires two-step verification:
+                      </p>
+                      <ol style={{ fontSize: "14px", color: "var(--text-secondary)", marginTop: "8px", paddingLeft: "20px", lineHeight: 1.8 }}>
+                        <li>Enter your password</li>
+                        <li>Enter a 6-digit code sent to your email</li>
+                      </ol>
+                      <p style={{ fontSize: "13px", color: "var(--text-muted)", marginTop: "8px" }}>
+                        This ensures that even if someone knows your password, they can&apos;t access your recovery code without access to your email.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Footer */}
+                  <div
+                    style={{
+                      padding: "16px 24px 24px",
+                      borderTop: "1px solid var(--border-light)",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <button
+                      onClick={() => setShowRecoveryInfoModal(false)}
+                      style={{
+                        width: "100%",
+                        padding: "14px 20px",
+                        fontSize: "15px",
+                        fontWeight: 600,
+                        backgroundColor: "var(--accent-primary)",
+                        border: "none",
+                        borderRadius: "10px",
+                        color: "white",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Got it
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Invite Friends Section */}
+            <div className="card" style={{ marginBottom: "var(--space-lg)", padding: "var(--space-lg)" }}>
+              <div
+                className="flex items-center justify-between"
+                style={{ marginBottom: "var(--space-lg)" }}
+              >
+                <h2
+                  className="font-serif font-semibold text-[var(--text-primary)]"
+                  style={{ fontSize: "var(--text-lg)" }}
+                >
+                  Invite Friends
+                </h2>
+              </div>
+
+              <p
+                className="text-[var(--text-secondary)]"
+                style={{
+                  fontSize: "var(--text-sm)",
+                  marginBottom: "var(--space-lg)",
+                  lineHeight: "var(--leading-relaxed)",
+                }}
+              >
+                Invite friends and family to join Love1Another and pray together.
+                Share a personal invitation link or send an email invite.
+              </p>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-md)" }}>
+                {/* Copy Link Button */}
+                <button
+                  className="btn btn-secondary w-full"
+                  onClick={handleCopyShareLink}
+                  style={{
+                    padding: "var(--space-md)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "var(--space-sm)",
+                  }}
+                >
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    {shareLinkCopied ? (
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M5 13l4 4L19 7"
+                      />
+                    ) : (
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
+                      />
+                    )}
+                  </svg>
+                  {shareLinkCopied ? "Copied!" : "Copy Invite Link"}
+                </button>
+
+                {/* Send Email Invite Button */}
+                <button
+                  className="btn btn-primary w-full"
+                  onClick={() => setShowShareModal(true)}
+                  style={{
+                    padding: "var(--space-md)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "var(--space-sm)",
+                  }}
+                >
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                    />
+                  </svg>
+                  Send Email Invitation
+                </button>
+              </div>
+            </div>
+
+            {/* Share/Invite Modal */}
+            {showShareModal && (
+              <div
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  zIndex: 9999,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "16px",
+                  backgroundColor: "rgba(0, 0, 0, 0.8)",
+                  backdropFilter: "blur(4px)",
+                }}
+              >
+                <div
+                  style={{
+                    width: "100%",
+                    maxWidth: "420px",
+                    backgroundColor: "var(--surface-primary)",
+                    borderRadius: "16px",
+                    boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)",
+                    overflow: "hidden",
+                  }}
+                >
+                  {/* Header */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      justifyContent: "space-between",
+                      padding: "24px 24px 16px",
+                    }}
+                  >
+                    <div style={{ flex: 1 }}>
+                      <h3
+                        style={{
+                          fontSize: "18px",
+                          fontWeight: 600,
+                          color: "var(--text-primary)",
+                          marginBottom: "4px",
+                        }}
+                      >
+                        Invite a Friend
+                      </h3>
+                      <p
+                        style={{
+                          fontSize: "14px",
+                          color: "var(--text-muted)",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        Send a personal invitation to join Love1Another and connect with you.
+                      </p>
+                    </div>
+                    <button
+                      onClick={resetShareModal}
+                      style={{
+                        padding: "8px",
+                        marginLeft: "16px",
+                        marginTop: "-4px",
+                        background: "transparent",
+                        border: "none",
+                        cursor: "pointer",
+                        color: "var(--text-muted)",
+                        borderRadius: "8px",
+                      }}
+                    >
+                      <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  {/* Form content */}
+                  <div style={{ padding: "8px 24px 24px" }}>
+                    {shareSuccess ? (
+                      <div style={{ textAlign: "center", padding: "24px 0" }}>
+                        <div
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            width: "64px",
+                            height: "64px",
+                            borderRadius: "50%",
+                            backgroundColor: "var(--success-light)",
+                            marginBottom: "16px",
+                          }}
+                        >
+                          <svg width="32" height="32" fill="var(--success)" viewBox="0 0 24 24">
+                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                          </svg>
+                        </div>
+                        <h4
+                          style={{
+                            fontSize: "18px",
+                            fontWeight: 600,
+                            color: "var(--text-primary)",
+                            marginBottom: "8px",
+                          }}
+                        >
+                          Invitation Sent!
+                        </h4>
+                        <p
+                          style={{
+                            fontSize: "14px",
+                            color: "var(--text-secondary)",
+                            lineHeight: 1.6,
+                          }}
+                        >
+                          Your friend will receive an email with your personal invitation.
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{ marginBottom: "20px" }}>
+                          <label
+                            style={{
+                              display: "block",
+                              fontSize: "14px",
+                              fontWeight: 500,
+                              color: "var(--text-primary)",
+                              marginBottom: "8px",
+                            }}
+                          >
+                            Friend&apos;s Email Address
+                          </label>
+                          <input
+                            type="email"
+                            placeholder="friend@example.com"
+                            value={shareEmail}
+                            onChange={(e) => setShareEmail(e.target.value)}
+                            disabled={shareSending}
+                            style={{
+                              width: "100%",
+                              padding: "14px 16px",
+                              fontSize: "15px",
+                              backgroundColor: "var(--surface-elevated)",
+                              border: "1px solid var(--border-medium)",
+                              borderRadius: "12px",
+                              color: "var(--text-primary)",
+                            }}
+                          />
+                        </div>
+
+                        {/* Preview */}
+                        <div
+                          style={{
+                            padding: "16px",
+                            backgroundColor: "var(--surface-elevated)",
+                            borderRadius: "12px",
+                          }}
+                        >
+                          <p
+                            style={{
+                              fontSize: "14px",
+                              fontStyle: "italic",
+                              color: "var(--text-secondary)",
+                              lineHeight: 1.6,
+                            }}
+                          >
+                            &quot;Hey! Can I pray for you? Sign up on Love1Another and add me: <strong style={{ color: "var(--accent-primary)" }}>@{user?.username || "username"}</strong>&quot;
+                          </p>
+                          <p
+                            style={{
+                              fontSize: "13px",
+                              color: "var(--text-muted)",
+                              marginTop: "8px",
+                            }}
+                          >
+                            — {user?.fullName || "Your Name"}
+                          </p>
+                        </div>
+
+                        {shareError && (
+                          <div style={{ marginTop: "16px" }}>
+                            <Alert variant="destructive" icon={<AlertCircleIcon />}>
+                              <AlertTitle>{shareError}</AlertTitle>
+                            </Alert>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  {/* Footer with buttons */}
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "12px",
+                      padding: "16px 24px 24px",
+                      borderTop: "1px solid var(--border-light)",
+                    }}
+                  >
+                    <button
+                      onClick={resetShareModal}
+                      disabled={shareSending}
+                      style={{
+                        flex: 1,
+                        padding: "14px 20px",
+                        fontSize: "15px",
+                        fontWeight: 500,
+                        backgroundColor: "transparent",
+                        border: "1px solid var(--border-medium)",
+                        borderRadius: "10px",
+                        color: "var(--text-primary)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {shareSuccess ? "Close" : "Cancel"}
+                    </button>
+                    {!shareSuccess && (
+                      <button
+                        onClick={handleShareInvite}
+                        disabled={!shareEmail || shareSending}
+                        style={{
+                          flex: 1,
+                          padding: "14px 20px",
+                          fontSize: "15px",
+                          fontWeight: 600,
+                          backgroundColor: "var(--accent-primary)",
+                          border: "none",
+                          borderRadius: "10px",
+                          color: "white",
+                          cursor: "pointer",
+                          opacity: !shareEmail || shareSending ? 0.5 : 1,
+                        }}
+                      >
+                        {shareSending ? "Sending..." : "Send Invitation"}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useAuth } from "@/components/AuthGuard";
 import { useAlertBanner } from "@/components/ui/alert-banner";
 import { useCrypto } from "@/lib/use-crypto";
@@ -1440,9 +1440,9 @@ function ThreadView({
     }
   }, [isLoadingMessages, messages.length]);
 
-  // Fetch group members when group info is shown
+  // Fetch group members when group thread is open (for showing avatars in messages)
   useEffect(() => {
-    if (showGroupInfo && thread.type === "group") {
+    if (thread.type === "group") {
       setIsLoadingMembers(true);
       fetch(`/api/conversations/groups/${thread.id}/members`)
         .then((res) => res.json())
@@ -1457,7 +1457,16 @@ function ThreadView({
           setIsLoadingMembers(false);
         });
     }
-  }, [showGroupInfo, thread.id, thread.type]);
+  }, [thread.id, thread.type]);
+
+  // Create a lookup map for group members by userId
+  const memberLookup = useMemo(() => {
+    const map = new Map<string, GroupMember>();
+    groupMembers.forEach((member) => {
+      map.set(member.userId, member);
+    });
+    return map;
+  }, [groupMembers]);
 
   // Handle removing a member from group
   const handleRemoveMember = async (memberId: string) => {
@@ -2361,16 +2370,16 @@ function ThreadView({
           )}
         </div>
         <div
-          className="flex-1 truncate cursor-pointer"
+          className="flex-1 min-w-0 cursor-pointer"
           onClick={() => thread.type === "group" && setShowGroupInfo(true)}
         >
-          <span className="font-medium">
+          <div className="font-medium truncate">
             {thread.participantName}
-          </span>
+          </div>
           {thread.type === "group" && (
-            <span className="text-[var(--text-muted)] ml-2" style={{ fontSize: "var(--text-xs)" }}>
+            <div className="text-[var(--text-muted)]" style={{ fontSize: "var(--text-xs)" }}>
               Tap for info
-            </span>
+            </div>
           )}
         </div>
         <button
@@ -2509,18 +2518,56 @@ function ThreadView({
             const isOwn = msg.senderId === currentUserId;
             const isPrayerRequest = msg.type === "prayer_request";
 
+            // Get sender info for group messages
+            const sender = thread.type === "group" && !isOwn ? memberLookup.get(msg.senderId) : null;
+
             return (
               <div
                 key={msg.id}
                 className={`flex ${isOwn ? "justify-end" : "justify-start"}`}
                 style={{ marginBottom: "var(--space-sm)" }}
               >
+                {/* Sender Avatar for group messages (non-own) */}
+                {thread.type === "group" && !isOwn && (
+                  <div
+                    className="flex-shrink-0 mr-2 flex flex-col items-center"
+                    style={{ width: "32px" }}
+                  >
+                    <div
+                      className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium overflow-hidden"
+                      style={{
+                        backgroundColor: sender?.avatarColor || "var(--surface-elevated)",
+                        color: "white",
+                      }}
+                      title={sender?.fullName || "Unknown"}
+                    >
+                      {sender?.avatarPath ? (
+                        <img
+                          src={sender.avatarPath}
+                          alt={sender.fullName}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        sender?.avatarInitials || "?"
+                      )}
+                    </div>
+                  </div>
+                )}
                 <div
                   style={{
-                    maxWidth: "80%",
+                    maxWidth: thread.type === "group" && !isOwn ? "calc(80% - 40px)" : "80%",
                     position: "relative",
                   }}
                 >
+                  {/* Sender name for group messages */}
+                  {thread.type === "group" && !isOwn && sender && (
+                    <div
+                      className="text-xs mb-1 font-medium"
+                      style={{ color: sender.avatarColor || "var(--text-secondary)" }}
+                    >
+                      {sender.fullName}
+                    </div>
+                  )}
                   {/* Prayer Request Badge */}
                   {isPrayerRequest && !isOwn && (
                     <div

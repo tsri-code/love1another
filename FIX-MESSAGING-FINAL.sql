@@ -337,7 +337,7 @@ BEGIN
     -- Create new conversation
     INSERT INTO conversations (user1_id, user2_id, type)
     VALUES (v_user1, v_user2, 'private')
-    RETURNING id INTO v_conversation_id;
+    RETURNING conversations.id INTO v_conversation_id;
   END IF;
 
   -- Remove any soft-delete records for both users so they can access the conversation again

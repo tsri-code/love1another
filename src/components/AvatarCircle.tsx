@@ -70,6 +70,8 @@ export function AvatarCircle({
           src={imagePath}
           alt={name}
           className="w-full h-full rounded-full object-cover"
+          loading="lazy"
+          decoding="async"
           onError={() => setImageError(true)}
         />
       ) : (
