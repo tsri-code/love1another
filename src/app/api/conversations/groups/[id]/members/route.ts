@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
-import { addGroupMember, removeGroupMember } from "@/lib/supabase-db";
+import { addGroupMember } from "@/lib/supabase-db";
 import { z } from "zod";
 
 // Schema for adding members
 const addMemberSchema = z.object({
   userId: z.string().uuid(),
+});
+
+// Schema for updating member role
+const updateRoleSchema = z.object({
+  userId: z.string().uuid(),
+  action: z.enum(["promote", "demote"]),
 });
 
 // GET /api/conversations/groups/[id]/members - Get group members
@@ -62,6 +68,27 @@ export async function GET(
     );
     const isAdmin = currentUserMember?.role === "admin";
 
+    // Check if user can leave (for admins)
+    let canLeave = true;
+    let leaveBlockedReason = "";
+
+    if (isAdmin) {
+      const { data: canLeaveData, error: canLeaveError } = await supabase.rpc("can_leave_group", {
+        p_conversation_id: conversationId,
+      });
+
+      if (!canLeaveError && canLeaveData && canLeaveData.length > 0) {
+        canLeave = canLeaveData[0].can_leave;
+        leaveBlockedReason = canLeaveData[0].reason || "";
+      }
+    }
+
+    // Get creator ID for the group
+    const { data: conversationData } = await supabase.rpc("get_conversation_details", {
+      p_conversation_id: conversationId,
+    });
+    const creatorId = conversationData?.[0]?.creator_id || null;
+
     return NextResponse.json({
       members: (members || []).map((m: {
         user_id: string;
@@ -85,6 +112,9 @@ export async function GET(
         avatarPath: m.avatar_path,
       })),
       isAdmin,
+      canLeave,
+      leaveBlockedReason,
+      creatorId,
     });
   } catch (error) {
     console.error("Error in GET /api/conversations/groups/[id]/members:", error);
@@ -140,6 +170,80 @@ export async function POST(
   }
 }
 
+// PATCH /api/conversations/groups/[id]/members - Promote or demote a member
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: conversationId } = await params;
+    const supabase = await createServerSupabaseClient();
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const validation = updateRoleSchema.safeParse(body);
+
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: "Invalid request", details: validation.error.issues },
+        { status: 400 }
+      );
+    }
+
+    const { userId, action } = validation.data;
+
+    if (action === "promote") {
+      const { error } = await supabase.rpc("promote_to_admin", {
+        p_conversation_id: conversationId,
+        p_target_user_id: userId,
+      });
+
+      if (error) {
+        console.error("Error promoting member:", error);
+        return NextResponse.json(
+          { error: error.message || "Failed to promote member" },
+          { status: 400 }
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: "Member promoted to admin",
+      });
+    } else {
+      const { error } = await supabase.rpc("demote_from_admin", {
+        p_conversation_id: conversationId,
+        p_target_user_id: userId,
+      });
+
+      if (error) {
+        console.error("Error demoting member:", error);
+        return NextResponse.json(
+          { error: error.message || "Failed to demote member" },
+          { status: 400 }
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: "Admin demoted to member",
+      });
+    }
+  } catch (error) {
+    console.error("Error in PATCH /api/conversations/groups/[id]/members:", error);
+    const message = error instanceof Error ? error.message : "Internal server error";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
 // DELETE /api/conversations/groups/[id]/members - Remove member or leave group
 // If no userId query param: user leaves the group (uses delete_conversation RPC)
 // If userId query param: creator kicks that member (uses remove_group_member RPC)
@@ -162,11 +266,61 @@ export async function DELETE(
 
     const url = new URL(request.url);
     const targetUserId = url.searchParams.get("userId");
+    const deleteGroup = url.searchParams.get("deleteGroup") === "true";
+
+    // If deleteGroup=true, admin wants to delete entire group for everyone
+    if (deleteGroup) {
+      // Use RPC to delete group (handles admin check internally)
+      const { data: success, error: deleteError } = await supabase.rpc("admin_delete_group", {
+        p_conversation_id: conversationId,
+      });
+
+      if (deleteError) {
+        console.error("Error deleting group:", deleteError);
+        return NextResponse.json(
+          { error: deleteError.message || "Failed to delete group" },
+          { status: 400 }
+        );
+      }
+
+      if (!success) {
+        return NextResponse.json(
+          { error: "Failed to delete group" },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: "Group deleted successfully",
+        groupDeleted: true,
+      });
+    }
 
     // If no userId specified, user is leaving the group
     const isSelfLeaving = !targetUserId || targetUserId === user.id;
+    const skipLeaveCheck = url.searchParams.get("skipCheck") === "true";
 
     if (isSelfLeaving) {
+      // First check if user can leave (admin restriction)
+      if (!skipLeaveCheck) {
+        const { data: canLeaveData, error: canLeaveError } = await supabase.rpc("can_leave_group", {
+          p_conversation_id: conversationId,
+        });
+
+        if (canLeaveError) {
+          console.error("Error checking leave permission:", canLeaveError);
+        } else if (canLeaveData && canLeaveData.length > 0) {
+          const { can_leave, reason } = canLeaveData[0];
+          if (!can_leave) {
+            return NextResponse.json(
+              { error: "Cannot leave group", reason, requiresAdminAppoint: true },
+              { status: 403 }
+            );
+          }
+        }
+      }
+
       // User is leaving - use delete_conversation RPC
       // The RPC handles: creator deletes whole group, member just leaves
       const { data: success, error } = await supabase.rpc("delete_conversation", {
@@ -201,8 +355,19 @@ export async function DELETE(
         groupDeleted: !stillHasAccess,
       });
     } else {
-      // Creator is kicking a member - use remove_group_member RPC
-      await removeGroupMember(conversationId, targetUserId);
+      // Admin is removing a member - use admin_remove_member RPC
+      const { error } = await supabase.rpc("admin_remove_member", {
+        p_conversation_id: conversationId,
+        p_target_user_id: targetUserId,
+      });
+
+      if (error) {
+        console.error("Error removing member:", error);
+        return NextResponse.json(
+          { error: error.message || "Failed to remove member" },
+          { status: 400 }
+        );
+      }
 
       return NextResponse.json({
         success: true,

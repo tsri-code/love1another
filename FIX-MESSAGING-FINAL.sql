@@ -1007,6 +1007,270 @@ BEGIN
 END;
 $$;
 
+-- -----------------------------------------------------------------------------
+-- Function: Promote member to admin
+-- Only creator or existing admins can promote members
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.promote_to_admin(
+  p_conversation_id UUID,
+  p_target_user_id UUID
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_user_id UUID;
+  v_user_role TEXT;
+  v_target_exists BOOLEAN;
+BEGIN
+  v_user_id := auth.uid();
+
+  -- Check if current user is an admin in this group
+  SELECT role INTO v_user_role
+  FROM conversation_members
+  WHERE conversation_id = p_conversation_id AND user_id = v_user_id;
+
+  IF v_user_role IS NULL OR v_user_role != 'admin' THEN
+    RAISE EXCEPTION 'Only admins can promote members';
+  END IF;
+
+  -- Check if target user is a member
+  SELECT EXISTS(
+    SELECT 1 FROM conversation_members
+    WHERE conversation_id = p_conversation_id AND user_id = p_target_user_id
+  ) INTO v_target_exists;
+
+  IF NOT v_target_exists THEN
+    RAISE EXCEPTION 'User is not a member of this group';
+  END IF;
+
+  -- Promote to admin
+  UPDATE conversation_members
+  SET role = 'admin'
+  WHERE conversation_id = p_conversation_id AND user_id = p_target_user_id;
+
+  RETURN TRUE;
+END;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Function: Demote admin to member
+-- Only creator or existing admins can demote (cannot demote creator)
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.demote_from_admin(
+  p_conversation_id UUID,
+  p_target_user_id UUID
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_user_id UUID;
+  v_user_role TEXT;
+  v_creator_id UUID;
+BEGIN
+  v_user_id := auth.uid();
+
+  -- Check if current user is an admin
+  SELECT role INTO v_user_role
+  FROM conversation_members
+  WHERE conversation_id = p_conversation_id AND user_id = v_user_id;
+
+  IF v_user_role IS NULL OR v_user_role != 'admin' THEN
+    RAISE EXCEPTION 'Only admins can demote members';
+  END IF;
+
+  -- Get creator ID
+  SELECT creator_id INTO v_creator_id
+  FROM conversations
+  WHERE id = p_conversation_id;
+
+  -- Cannot demote the creator
+  IF p_target_user_id = v_creator_id THEN
+    RAISE EXCEPTION 'Cannot demote the group creator';
+  END IF;
+
+  -- Demote to member
+  UPDATE conversation_members
+  SET role = 'member'
+  WHERE conversation_id = p_conversation_id AND user_id = p_target_user_id;
+
+  RETURN TRUE;
+END;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Function: Check if user can leave group
+-- Admins/creator can only leave if another admin exists
+-- Returns: can_leave (boolean), reason (text)
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.can_leave_group(
+  p_conversation_id UUID
+)
+RETURNS TABLE (can_leave BOOLEAN, reason TEXT)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_user_id UUID;
+  v_user_role TEXT;
+  v_creator_id UUID;
+  v_admin_count INT;
+  v_is_creator BOOLEAN;
+BEGIN
+  v_user_id := auth.uid();
+
+  -- Get user's role in the group
+  SELECT role INTO v_user_role
+  FROM conversation_members
+  WHERE conversation_id = p_conversation_id AND user_id = v_user_id;
+
+  IF v_user_role IS NULL THEN
+    RETURN QUERY SELECT FALSE::BOOLEAN, 'You are not a member of this group'::TEXT;
+    RETURN;
+  END IF;
+
+  -- Get creator ID
+  SELECT creator_id INTO v_creator_id
+  FROM conversations
+  WHERE id = p_conversation_id;
+
+  v_is_creator := (v_user_id = v_creator_id);
+
+  -- If user is not an admin, they can always leave
+  IF v_user_role != 'admin' THEN
+    RETURN QUERY SELECT TRUE::BOOLEAN, ''::TEXT;
+    RETURN;
+  END IF;
+
+  -- Count other admins (excluding current user)
+  SELECT COUNT(*) INTO v_admin_count
+  FROM conversation_members
+  WHERE conversation_id = p_conversation_id
+    AND user_id != v_user_id
+    AND role = 'admin';
+
+  -- If there are other admins, user can leave
+  IF v_admin_count > 0 THEN
+    RETURN QUERY SELECT TRUE::BOOLEAN, ''::TEXT;
+    RETURN;
+  END IF;
+
+  -- No other admins - user must appoint one first
+  IF v_is_creator THEN
+    RETURN QUERY SELECT FALSE::BOOLEAN, 'As the creator, you must appoint another admin before leaving or deleting the group.'::TEXT;
+  ELSE
+    RETURN QUERY SELECT FALSE::BOOLEAN, 'As an admin, you must appoint another admin before leaving the group.'::TEXT;
+  END IF;
+END;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Function: Remove member from group (for admins)
+-- Admins can remove non-admin members
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.admin_remove_member(
+  p_conversation_id UUID,
+  p_target_user_id UUID
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_user_id UUID;
+  v_user_role TEXT;
+  v_target_role TEXT;
+  v_creator_id UUID;
+BEGIN
+  v_user_id := auth.uid();
+
+  -- Check if current user is an admin
+  SELECT role INTO v_user_role
+  FROM conversation_members
+  WHERE conversation_id = p_conversation_id AND user_id = v_user_id;
+
+  IF v_user_role IS NULL OR v_user_role != 'admin' THEN
+    RAISE EXCEPTION 'Only admins can remove members';
+  END IF;
+
+  -- Get target user's role
+  SELECT role INTO v_target_role
+  FROM conversation_members
+  WHERE conversation_id = p_conversation_id AND user_id = p_target_user_id;
+
+  IF v_target_role IS NULL THEN
+    RAISE EXCEPTION 'User is not a member of this group';
+  END IF;
+
+  -- Get creator ID
+  SELECT creator_id INTO v_creator_id
+  FROM conversations
+  WHERE id = p_conversation_id;
+
+  -- Cannot remove the creator
+  IF p_target_user_id = v_creator_id THEN
+    RAISE EXCEPTION 'Cannot remove the group creator';
+  END IF;
+
+  -- Remove the member
+  DELETE FROM conversation_members
+  WHERE conversation_id = p_conversation_id AND user_id = p_target_user_id;
+
+  RETURN TRUE;
+END;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Function: Admin delete entire group
+-- Only admins can delete the group for everyone
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.admin_delete_group(
+  p_conversation_id UUID
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_user_id UUID;
+  v_user_role TEXT;
+  v_is_group BOOLEAN;
+BEGIN
+  v_user_id := auth.uid();
+
+  -- Check if this is a group conversation
+  SELECT (type = 'group') INTO v_is_group
+  FROM conversations
+  WHERE id = p_conversation_id;
+
+  IF NOT v_is_group THEN
+    RAISE EXCEPTION 'This is not a group conversation';
+  END IF;
+
+  -- Check if current user is an admin
+  SELECT role INTO v_user_role
+  FROM conversation_members
+  WHERE conversation_id = p_conversation_id AND user_id = v_user_id;
+
+  IF v_user_role IS NULL OR v_user_role != 'admin' THEN
+    RAISE EXCEPTION 'Only admins can delete the group';
+  END IF;
+
+  -- Delete the conversation (CASCADE will delete members and messages)
+  DELETE FROM conversations WHERE id = p_conversation_id;
+
+  RETURN TRUE;
+END;
+$$;
+
 -- =============================================================================
 -- STEP 6: GRANT PERMISSIONS
 -- =============================================================================
@@ -1027,6 +1291,11 @@ GRANT EXECUTE ON FUNCTION public.add_group_member TO authenticated;
 GRANT EXECUTE ON FUNCTION public.remove_group_member TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_conversation_details TO authenticated;
 GRANT EXECUTE ON FUNCTION public.update_group_info TO authenticated;
+GRANT EXECUTE ON FUNCTION public.promote_to_admin TO authenticated;
+GRANT EXECUTE ON FUNCTION public.demote_from_admin TO authenticated;
+GRANT EXECUTE ON FUNCTION public.can_leave_group TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_remove_member TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_delete_group TO authenticated;
 
 -- =============================================================================
 -- STEP 7: REFRESH POSTGREST SCHEMA CACHE

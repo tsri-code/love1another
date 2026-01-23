@@ -575,10 +575,19 @@ export function MessagesButton({
     setSelectedThread(null);
   };
 
-  const handleDeleteThread = async (threadId: string, isGroup: boolean = false) => {
+  // Action can be: "clear" (hide thread), "leave" (leave group), "delete" (delete conversation/group)
+  const handleDeleteThread = async (threadId: string, action: "clear" | "leave" | "delete" = "delete") => {
     try {
-      if (isGroup) {
-        // Leave group by deleting membership
+      if (action === "clear") {
+        // Just clear/hide the thread from view (user stays in group)
+        // For now, we just remove it from local state - it will reappear on refresh if there are messages
+        setThreads((prev) => prev.filter((t) => t.id !== threadId));
+        setSelectedThread(null);
+        return;
+      }
+
+      if (action === "leave") {
+        // Leave group - removes user from group membership
         const res = await fetch(`/api/conversations/groups/${threadId}/members`, {
           method: "DELETE",
         });
@@ -587,7 +596,31 @@ export function MessagesButton({
           setThreads((prev) => prev.filter((t) => t.id !== threadId));
           setSelectedThread(null);
         } else {
-          console.error("Failed to leave group");
+          const data = await res.json().catch(() => ({}));
+          if (data.requiresAdminAppoint) {
+            alert(data.reason || "You must appoint another admin before leaving.");
+          } else {
+            console.error("Failed to leave group:", data.error);
+          }
+        }
+        return;
+      }
+
+      // action === "delete" - Delete conversation entirely
+      // Check if this is a group by looking at the thread
+      const thread = threads.find((t) => t.id === threadId);
+      if (thread?.type === "group") {
+        // For groups, this deletes the entire group for everyone
+        // We use a special endpoint or query param to indicate full deletion
+        const res = await fetch(`/api/conversations/groups/${threadId}/members?deleteGroup=true`, {
+          method: "DELETE",
+        });
+
+        if (res.ok) {
+          setThreads((prev) => prev.filter((t) => t.id !== threadId));
+          setSelectedThread(null);
+        } else {
+          console.error("Failed to delete group");
         }
       } else {
         // Delete direct conversation
@@ -603,7 +636,7 @@ export function MessagesButton({
         }
       }
     } catch (error) {
-      console.error("Error deleting conversation:", error);
+      console.error("Error in handleDeleteThread:", error);
     }
   };
 
@@ -1389,7 +1422,7 @@ interface ThreadViewProps {
   thread: Thread;
   onBack: () => void;
   onClose: () => void;
-  onDelete: (threadId: string, isGroup?: boolean) => void;
+  onDelete: (threadId: string, action?: "clear" | "leave" | "delete") => void;
   onPrayerAdded?: () => void;
   onMessageSent?: () => void;
   getInitials: (name: string) => string;
@@ -1444,6 +1477,15 @@ function ThreadView({
   const [isLoadingFriends, setIsLoadingFriends] = useState(false);
   const [isAddingMember, setIsAddingMember] = useState<string | null>(null);
 
+  // Admin management state
+  const [canLeave, setCanLeave] = useState(true);
+  const [leaveBlockedReason, setLeaveBlockedReason] = useState("");
+  const [creatorId, setCreatorId] = useState<string | null>(null);
+  const [showAdminRequiredModal, setShowAdminRequiredModal] = useState(false);
+  const [isChangingRole, setIsChangingRole] = useState<string | null>(null);
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [showDeleteGroupConfirm, setShowDeleteGroupConfirm] = useState(false);
+
   // Ref for scrolling to bottom
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
@@ -1472,6 +1514,9 @@ function ThreadView({
           console.log("Group members fetched:", data);
           setGroupMembers(data.members || []);
           setIsAdmin(data.isAdmin || false);
+          setCanLeave(data.canLeave !== false);
+          setLeaveBlockedReason(data.leaveBlockedReason || "");
+          setCreatorId(data.creatorId || null);
         })
         .catch((err) => {
           console.error("Error fetching group members:", err);
@@ -1502,12 +1547,71 @@ function ThreadView({
       );
       if (res.ok) {
         setGroupMembers((prev) => prev.filter((m) => m.userId !== memberId));
+      } else {
+        const data = await res.json();
+        alert(data.error || "Failed to remove member");
       }
     } catch (err) {
       console.error("Error removing member:", err);
     } finally {
       setIsRemovingMember(null);
     }
+  };
+
+  // Handle promoting/demoting a member
+  const handleChangeRole = async (memberId: string, action: "promote" | "demote") => {
+    if (isChangingRole) return;
+    setIsChangingRole(memberId);
+    try {
+      const res = await fetch(
+        `/api/conversations/groups/${thread.id}/members`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: memberId, action }),
+        }
+      );
+      if (res.ok) {
+        // Update local state
+        setGroupMembers((prev) =>
+          prev.map((m) =>
+            m.userId === memberId
+              ? { ...m, role: action === "promote" ? "admin" : "member" }
+              : m
+          )
+        );
+        // Re-fetch to get updated canLeave status
+        const refreshRes = await fetch(`/api/conversations/groups/${thread.id}/members`);
+        if (refreshRes.ok) {
+          const data = await refreshRes.json();
+          setCanLeave(data.canLeave !== false);
+          setLeaveBlockedReason(data.leaveBlockedReason || "");
+        }
+      } else {
+        const data = await res.json();
+        alert(data.error || `Failed to ${action} member`);
+      }
+    } catch (err) {
+      console.error(`Error ${action}ing member:`, err);
+    } finally {
+      setIsChangingRole(null);
+    }
+  };
+
+  // Handle leave group with admin check (for admins/creator)
+  const handleLeaveGroup = () => {
+    if (!canLeave) {
+      // Show admin required modal FIRST
+      setShowAdminRequiredModal(true);
+    } else {
+      // Show leave confirmation
+      setShowLeaveConfirm(true);
+    }
+  };
+
+  // Handle delete group (for admins/creator only)
+  const handleDeleteGroup = () => {
+    setShowDeleteGroupConfirm(true);
   };
 
   // Fetch friends who can be added to the group
@@ -2597,29 +2701,84 @@ function ThreadView({
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-[var(--text-primary)] truncate">
-                      {member.fullName}
-                      {member.userId === currentUserId && " (You)"}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium text-[var(--text-primary)] truncate">
+                        {member.fullName}
+                        {member.userId === currentUserId && " (You)"}
+                      </p>
+                      {member.role === "admin" && (
+                        <span
+                          style={{
+                            fontSize: "var(--text-xs)",
+                            padding: "2px 6px",
+                            borderRadius: "4px",
+                            background: member.userId === creatorId ? "var(--accent-primary)" : "var(--warning-light)",
+                            color: member.userId === creatorId ? "white" : "var(--warning)",
+                            fontWeight: 600,
+                          }}
+                        >
+                          {member.userId === creatorId ? "Creator" : "Admin"}
+                        </span>
+                      )}
+                    </div>
                     <p className="text-[var(--text-muted)]" style={{ fontSize: "var(--text-sm)" }}>
-                      {member.role === "admin" ? "Admin" : "Member"}
+                      @{member.username || "user"}
                     </p>
                   </div>
-                  {isAdmin && member.userId !== currentUserId && member.role !== "admin" && (
-                    <button
-                      className="btn btn-sm"
-                      style={{
-                        background: "var(--error-light)",
-                        color: "var(--error)",
-                        fontSize: "var(--text-xs)",
-                        padding: "4px 12px",
-                        height: "32px",
-                      }}
-                      onClick={() => handleRemoveMember(member.userId)}
-                      disabled={isRemovingMember === member.userId}
-                    >
-                      {isRemovingMember === member.userId ? "..." : "Remove"}
-                    </button>
+                  {/* Admin controls - only for admins managing other members */}
+                  {isAdmin && member.userId !== currentUserId && member.userId !== creatorId && (
+                    <div className="flex items-center" style={{ gap: "6px" }}>
+                      {member.role === "admin" ? (
+                        <button
+                          className="btn btn-sm"
+                          style={{
+                            background: "var(--surface-secondary)",
+                            color: "var(--text-secondary)",
+                            fontSize: "var(--text-xs)",
+                            padding: "4px 10px",
+                            height: "28px",
+                          }}
+                          onClick={() => handleChangeRole(member.userId, "demote")}
+                          disabled={isChangingRole === member.userId}
+                          title="Remove admin role"
+                        >
+                          {isChangingRole === member.userId ? "..." : "Demote"}
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            className="btn btn-sm"
+                            style={{
+                              background: "var(--accent-secondary)",
+                              color: "var(--accent-dark)",
+                              fontSize: "var(--text-xs)",
+                              padding: "4px 10px",
+                              height: "28px",
+                            }}
+                            onClick={() => handleChangeRole(member.userId, "promote")}
+                            disabled={isChangingRole === member.userId}
+                            title="Make admin"
+                          >
+                            {isChangingRole === member.userId ? "..." : "Make Admin"}
+                          </button>
+                          <button
+                            className="btn btn-sm"
+                            style={{
+                              background: "var(--error-light)",
+                              color: "var(--error)",
+                              fontSize: "var(--text-xs)",
+                              padding: "4px 10px",
+                              height: "28px",
+                            }}
+                            onClick={() => handleRemoveMember(member.userId)}
+                            disabled={isRemovingMember === member.userId}
+                            title="Remove from group"
+                          >
+                            {isRemovingMember === member.userId ? "..." : "Remove"}
+                          </button>
+                        </>
+                      )}
+                    </div>
                   )}
                 </div>
               ))
@@ -2743,13 +2902,24 @@ function ThreadView({
               </div>
             )}
 
+          </div>
+          {/* End scrollable content */}
+
+          {/* Fixed Bottom Section */}
+          <div
+            className="flex-shrink-0"
+            style={{
+              borderTop: "1px solid var(--border-light)",
+              background: "var(--surface-primary)",
+            }}
+          >
             {/* Group Info Notice */}
             <div
               style={{
-                margin: "var(--space-lg)",
-                padding: "var(--space-md)",
+                margin: "var(--space-md) var(--space-lg)",
+                padding: "var(--space-sm) var(--space-md)",
                 backgroundColor: "var(--surface-elevated)",
-                borderRadius: "12px",
+                borderRadius: "8px",
                 border: "1px solid var(--border-light)",
               }}
             >
@@ -2757,42 +2927,51 @@ function ThreadView({
                 style={{
                   fontSize: "var(--text-xs)",
                   color: "var(--text-muted)",
-                  lineHeight: 1.5,
-                  marginBottom: "8px",
+                  lineHeight: 1.4,
                 }}
               >
-                <strong style={{ color: "var(--text-secondary)" }}>Note:</strong> If the group creator leaves, the entire group chat will be deleted for all members.
-              </p>
-              <p
-                style={{
-                  fontSize: "var(--text-xs)",
-                  color: "var(--text-muted)",
-                  lineHeight: 1.5,
-                }}
-              >
-                If a regular member leaves, they will simply be removed from the group and the conversation continues for others.
+                <strong style={{ color: "var(--text-secondary)" }}>Leave:</strong> You&apos;ll be removed but the group continues.
+                {isAdmin && <><br /><strong style={{ color: "var(--text-secondary)" }}>Delete:</strong> Permanently removes the group for everyone.</>}
               </p>
             </div>
 
-            {/* Leave Group Button */}
-            <div style={{ padding: "0 var(--space-lg) var(--space-lg)" }}>
+            {/* Action Buttons */}
+            <div style={{ padding: "0 var(--space-lg) var(--space-lg)", display: "flex", gap: "var(--space-sm)" }}>
+              {/* Leave Group Button - for everyone */}
               <button
-                className="btn w-full"
+                className="btn flex-1 transition-colors hover:bg-[var(--surface-secondary)]"
                 style={{
-                  background: "var(--error-light)",
-                  color: "var(--error)",
-                  border: "1px solid var(--error)",
+                  background: "transparent",
+                  color: "var(--text-secondary)",
+                  border: "1px solid var(--border-light)",
                 }}
                 onClick={() => {
                   setShowGroupInfo(false);
-                  setShowDeleteConfirm(true);
+                  handleLeaveGroup();
                 }}
               >
-                {isAdmin ? "Delete Group" : "Leave Group"}
+                Leave Group
               </button>
+
+              {/* Delete Group Button - only for admins/creator */}
+              {isAdmin && (
+                <button
+                  className="btn flex-1 transition-colors hover:opacity-90"
+                  style={{
+                    background: "var(--error)",
+                    color: "white",
+                    border: "none",
+                  }}
+                  onClick={() => {
+                    setShowGroupInfo(false);
+                    handleDeleteGroup();
+                  }}
+                >
+                  Delete Group
+                </button>
+              )}
             </div>
           </div>
-          {/* End scrollable content */}
         </div>
       )}
 
@@ -2870,7 +3049,8 @@ function ThreadView({
           )}
         </div>
         <div
-          className="flex-1 min-w-0 cursor-pointer"
+          className={`flex-1 min-w-0 ${thread.type === "group" ? "cursor-pointer rounded-lg transition-colors hover:bg-[var(--surface-secondary)]" : ""}`}
+          style={{ padding: thread.type === "group" ? "6px 10px" : "0", margin: thread.type === "group" ? "-6px -10px" : "0" }}
           onClick={() => thread.type === "group" && setShowGroupInfo(true)}
         >
           <div className="font-medium truncate">
@@ -2885,7 +3065,7 @@ function ThreadView({
         <button
           className="icon-btn"
           onClick={() => setShowDeleteConfirm(true)}
-          title={thread.type === "group" ? "Leave group" : "Delete conversation"}
+          title={thread.type === "group" ? "Clear thread" : "Delete conversation"}
         >
           <svg
             style={{ width: "18px", height: "18px" }}
@@ -2918,7 +3098,7 @@ function ThreadView({
         </button>
       </div>
 
-      {/* Delete/Leave Confirmation Modal */}
+      {/* Clear Thread / Delete Conversation Confirmation Modal */}
       {showDeleteConfirm && (
         <div
           className="absolute inset-0 flex items-center justify-center z-50"
@@ -2930,7 +3110,7 @@ function ThreadView({
             className="card card-elevated"
             style={{
               padding: "var(--space-lg)",
-              maxWidth: "300px",
+              maxWidth: "320px",
               margin: "var(--space-md)",
             }}
           >
@@ -2938,7 +3118,7 @@ function ThreadView({
               className="font-medium text-[var(--text-primary)]"
               style={{ marginBottom: "var(--space-md)" }}
             >
-              {thread.type === "group" ? "Leave this group?" : "Delete this conversation?"}
+              {thread.type === "group" ? "Clear this thread?" : "Delete this conversation?"}
             </p>
             <p
               className="text-[var(--text-secondary)]"
@@ -2948,7 +3128,7 @@ function ThreadView({
               }}
             >
               {thread.type === "group"
-                ? "You will no longer receive messages from this group. If you are the creator, the group will be deleted for everyone."
+                ? "This will hide the conversation from your view. You will still be a member of the group and the thread will reappear if someone sends a new message."
                 : "This will permanently delete all messages in this conversation."}
             </p>
             <div className="flex" style={{ gap: "var(--space-sm)" }}>
@@ -2961,15 +3141,231 @@ function ThreadView({
               <button
                 className="btn flex-1"
                 style={{
+                  background: thread.type === "group" ? "var(--accent-primary)" : "var(--error)",
+                  color: "white",
+                }}
+                onClick={() => {
+                  // For groups, this just clears the thread view (user stays in group)
+                  // For private, this deletes the conversation
+                  onDelete(thread.id, thread.type === "group" ? "clear" : "delete");
+                  setShowDeleteConfirm(false);
+                }}
+              >
+                {thread.type === "group" ? "Clear" : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Leave Group Confirmation Modal */}
+      {showLeaveConfirm && (
+        <div
+          className="absolute inset-0 flex items-center justify-center z-50"
+          style={{
+            background: "rgba(0, 0, 0, 0.5)",
+          }}
+        >
+          <div
+            className="card card-elevated"
+            style={{
+              padding: "var(--space-lg)",
+              maxWidth: "320px",
+              margin: "var(--space-md)",
+            }}
+          >
+            <p
+              className="font-medium text-[var(--text-primary)]"
+              style={{ marginBottom: "var(--space-md)" }}
+            >
+              Leave this group?
+            </p>
+            <p
+              className="text-[var(--text-secondary)]"
+              style={{
+                fontSize: "var(--text-sm)",
+                marginBottom: "var(--space-lg)",
+              }}
+            >
+              You will be removed from the group and won&apos;t receive any more messages. The group will continue for other members.
+            </p>
+            <div className="flex" style={{ gap: "var(--space-sm)" }}>
+              <button
+                className="btn btn-secondary flex-1"
+                onClick={() => setShowLeaveConfirm(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn flex-1"
+                style={{
                   background: "var(--error)",
                   color: "white",
                 }}
                 onClick={() => {
-                  onDelete(thread.id, thread.type === "group");
-                  setShowDeleteConfirm(false);
+                  onDelete(thread.id, "leave");
+                  setShowLeaveConfirm(false);
                 }}
               >
-                {thread.type === "group" ? "Leave" : "Delete"}
+                Leave
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Group Confirmation Modal */}
+      {showDeleteGroupConfirm && (
+        <div
+          className="absolute inset-0 flex items-center justify-center z-50"
+          style={{
+            background: "rgba(0, 0, 0, 0.5)",
+          }}
+        >
+          <div
+            className="card card-elevated"
+            style={{
+              padding: "var(--space-lg)",
+              maxWidth: "320px",
+              margin: "var(--space-md)",
+            }}
+          >
+            <div
+              className="flex items-center justify-center"
+              style={{
+                width: "48px",
+                height: "48px",
+                borderRadius: "50%",
+                background: "var(--error-light)",
+                margin: "0 auto var(--space-md)",
+              }}
+            >
+              <svg
+                style={{ width: "24px", height: "24px", color: "var(--error)" }}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                />
+              </svg>
+            </div>
+            <p
+              className="font-semibold text-[var(--text-primary)] text-center"
+              style={{ marginBottom: "var(--space-sm)", fontSize: "var(--text-lg)" }}
+            >
+              Delete Group?
+            </p>
+            <p
+              className="text-[var(--text-secondary)] text-center"
+              style={{
+                fontSize: "var(--text-sm)",
+                marginBottom: "var(--space-lg)",
+                lineHeight: 1.5,
+              }}
+            >
+              This will permanently delete the entire group and all messages for <strong>everyone</strong>. This action cannot be undone.
+            </p>
+            <div className="flex" style={{ gap: "var(--space-sm)" }}>
+              <button
+                className="btn btn-secondary flex-1"
+                onClick={() => setShowDeleteGroupConfirm(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn flex-1"
+                style={{
+                  background: "var(--error)",
+                  color: "white",
+                }}
+                onClick={() => {
+                  onDelete(thread.id, "delete");
+                  setShowDeleteGroupConfirm(false);
+                }}
+              >
+                Delete Group
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Required Modal */}
+      {showAdminRequiredModal && (
+        <div
+          className="absolute inset-0 flex items-center justify-center z-50"
+          style={{
+            background: "rgba(0, 0, 0, 0.5)",
+          }}
+        >
+          <div
+            className="card card-elevated"
+            style={{
+              padding: "var(--space-lg)",
+              maxWidth: "340px",
+              margin: "var(--space-md)",
+            }}
+          >
+            <div
+              className="flex items-center justify-center"
+              style={{
+                width: "48px",
+                height: "48px",
+                borderRadius: "50%",
+                background: "var(--warning-light)",
+                margin: "0 auto var(--space-md)",
+              }}
+            >
+              <svg
+                style={{ width: "24px", height: "24px", color: "var(--warning)" }}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                />
+              </svg>
+            </div>
+            <p
+              className="font-semibold text-[var(--text-primary)] text-center"
+              style={{ marginBottom: "var(--space-sm)", fontSize: "var(--text-lg)" }}
+            >
+              Admin Required
+            </p>
+            <p
+              className="text-[var(--text-secondary)] text-center"
+              style={{
+                fontSize: "var(--text-sm)",
+                marginBottom: "var(--space-lg)",
+                lineHeight: 1.5,
+              }}
+            >
+              {leaveBlockedReason || "You must appoint another admin before you can leave this group."}
+            </p>
+            <div className="flex" style={{ gap: "var(--space-sm)" }}>
+              <button
+                className="btn btn-secondary flex-1"
+                onClick={() => setShowAdminRequiredModal(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary flex-1"
+                onClick={() => {
+                  setShowAdminRequiredModal(false);
+                  setShowGroupInfo(true);
+                }}
+              >
+                Manage Admins
               </button>
             </div>
           </div>
