@@ -2256,7 +2256,7 @@ function ThreadView({
   return (
     <div
       className="flex flex-col"
-      style={{ height: "100%", position: "relative" }}
+      style={{ flex: 1, minHeight: 0, position: "relative" }}
     >
       {/* Profile Selector Modal */}
       {showProfileSelector && (
@@ -2488,7 +2488,7 @@ function ThreadView({
             {/* Group Avatar & Name - Editable */}
             <div
               className="flex flex-col items-center text-center"
-              style={{ padding: "var(--space-xl)" }}
+              style={{ padding: "var(--space-lg)" }}
             >
               {/* Avatar with upload button */}
               <div style={{ position: "relative", marginBottom: "var(--space-md)" }}>
@@ -2911,6 +2911,7 @@ function ThreadView({
             style={{
               borderTop: "1px solid var(--border-light)",
               background: "var(--surface-primary)",
+              paddingBottom: "env(safe-area-inset-bottom, 0px)",
             }}
           >
             {/* Group Info Notice */}

@@ -613,8 +613,8 @@ $$;
 -- -----------------------------------------------------------------------------
 -- Function: Delete/Leave a conversation (SOFT DELETE for users)
 -- For groups:
---   - Creator: HARD deletes entire group (messages, members, conversation)
---   - Member: SOFT delete (add to deletions) + remove from members (leave)
+--   - Any member (including creator): SOFT delete + remove from members (leave)
+--   - To actually delete the group, use admin_delete_group function
 -- For private:
 --   - SOFT delete only (add to deletions, conversation remains for other user)
 -- -----------------------------------------------------------------------------
@@ -647,32 +647,24 @@ BEGIN
 
   -- Handle GROUP conversations
   IF v_conv.type = 'group' THEN
-    IF v_conv.creator_id = v_user_id THEN
-      -- Creator: HARD delete entire group (with explicit type check)
-      DELETE FROM conversation_deletions WHERE conversation_id = p_conversation_id;
-      DELETE FROM messages WHERE conversation_id = p_conversation_id;
-      DELETE FROM conversation_members WHERE conversation_id = p_conversation_id;
-      DELETE FROM conversations WHERE id = p_conversation_id AND type = 'group';
-      RETURN TRUE;
-    ELSE
-      -- Non-creator member: SOFT delete + leave group
-      IF EXISTS (
-        SELECT 1 FROM conversation_members
-        WHERE conversation_id = p_conversation_id AND user_id = v_user_id
-      ) THEN
-        -- Add soft delete record (hide from user)
-        INSERT INTO conversation_deletions (conversation_id, user_id)
-        VALUES (p_conversation_id, v_user_id)
-        ON CONFLICT (conversation_id, user_id) DO NOTHING;
+    -- Any member (including creator): SOFT delete + leave group
+    -- To actually delete the group, use admin_delete_group function
+    IF EXISTS (
+      SELECT 1 FROM conversation_members
+      WHERE conversation_id = p_conversation_id AND user_id = v_user_id
+    ) THEN
+      -- Add soft delete record (hide from user)
+      INSERT INTO conversation_deletions (conversation_id, user_id)
+      VALUES (p_conversation_id, v_user_id)
+      ON CONFLICT (conversation_id, user_id) DO NOTHING;
 
-        -- Remove from group membership
-        DELETE FROM conversation_members
-        WHERE conversation_id = p_conversation_id AND user_id = v_user_id;
-        RETURN TRUE;
-      END IF;
-      -- Not a member
-      RETURN FALSE;
+      -- Remove from group membership
+      DELETE FROM conversation_members
+      WHERE conversation_id = p_conversation_id AND user_id = v_user_id;
+      RETURN TRUE;
     END IF;
+    -- Not a member
+    RETURN FALSE;
   END IF;
 
   -- Handle PRIVATE conversations

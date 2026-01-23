@@ -727,7 +727,7 @@ a:hover {
   right: 24px;
   width: min(520px, calc(100vw - 48px));
   max-height: min(85vh, calc(100vh - 80px));
-  min-height: 500px;
+  min-height: min(500px, 70vh);
   border-radius: var(--card-radius);
   box-shadow: var(--shadow-xl);
   transform-origin: bottom right;
