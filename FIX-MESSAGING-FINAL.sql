@@ -1381,6 +1381,7 @@ $$;
 
 -- -----------------------------------------------------------------------------
 -- Trigger: Create notification when a message is sent
+-- Wrapped in exception handler so it never breaks message sending
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.trigger_message_notification()
 RETURNS TRIGGER
@@ -1393,83 +1394,94 @@ DECLARE
   v_sender_name TEXT;
   v_recipient_id UUID;
   v_member RECORD;
+  v_is_prayer BOOLEAN;
 BEGIN
-  -- Get conversation details
-  SELECT * INTO v_conv FROM conversations WHERE id = NEW.conversation_id;
+  -- Wrap everything in exception handler so notifications never break messaging
+  BEGIN
+    -- Determine if this is a prayer request
+    v_is_prayer := (NEW.message_type = 'prayer_request');
 
-  IF NOT FOUND THEN
-    RETURN NEW;
-  END IF;
+    -- Get conversation details
+    SELECT * INTO v_conv FROM conversations WHERE id = NEW.conversation_id;
 
-  -- Get sender name
-  SELECT COALESCE(
-    raw_user_meta_data->>'full_name',
-    raw_user_meta_data->>'name',
-    email
-  ) INTO v_sender_name
-  FROM auth.users WHERE id = NEW.sender_id;
-
-  v_sender_name := COALESCE(v_sender_name, 'Someone');
-
-  -- Handle private conversations
-  IF v_conv.type = 'private' THEN
-    -- Notify the other user
-    IF v_conv.user1_id = NEW.sender_id THEN
-      v_recipient_id := v_conv.user2_id;
-    ELSE
-      v_recipient_id := v_conv.user1_id;
+    IF NOT FOUND THEN
+      RETURN NEW;
     END IF;
 
-    -- Check if recipient has soft-deleted the conversation
-    IF NOT EXISTS (
-      SELECT 1 FROM conversation_deletions
-      WHERE conversation_id = NEW.conversation_id AND user_id = v_recipient_id
-    ) THEN
-      INSERT INTO notification_events (user_id, type, title, body, payload)
-      VALUES (
-        v_recipient_id,
-        'message',
-        v_sender_name,
-        LEFT(NEW.content, 100),
-        jsonb_build_object(
-          'conversation_id', NEW.conversation_id,
-          'message_id', NEW.id,
-          'sender_id', NEW.sender_id,
-          'is_prayer_request', NEW.is_prayer_request
-        )
-      );
+    -- Get sender name
+    SELECT COALESCE(
+      raw_user_meta_data->>'full_name',
+      raw_user_meta_data->>'name',
+      email
+    ) INTO v_sender_name
+    FROM auth.users WHERE id = NEW.sender_id;
+
+    v_sender_name := COALESCE(v_sender_name, 'Someone');
+
+    -- Handle private conversations
+    IF v_conv.type = 'private' THEN
+      -- Notify the other user
+      IF v_conv.user1_id = NEW.sender_id THEN
+        v_recipient_id := v_conv.user2_id;
+      ELSE
+        v_recipient_id := v_conv.user1_id;
+      END IF;
+
+      -- Check if recipient has soft-deleted the conversation
+      IF NOT EXISTS (
+        SELECT 1 FROM conversation_deletions
+        WHERE conversation_id = NEW.conversation_id AND user_id = v_recipient_id
+      ) THEN
+        INSERT INTO notification_events (user_id, type, title, body, payload)
+        VALUES (
+          v_recipient_id,
+          'message',
+          v_sender_name,
+          CASE WHEN v_is_prayer THEN 'Sent a prayer request' ELSE 'New message' END,
+          jsonb_build_object(
+            'conversation_id', NEW.conversation_id,
+            'message_id', NEW.id,
+            'sender_id', NEW.sender_id,
+            'is_prayer_request', v_is_prayer
+          )
+        );
+      END IF;
+
+    -- Handle group conversations
+    ELSIF v_conv.type = 'group' THEN
+      -- Notify all members except the sender
+      FOR v_member IN
+        SELECT cm.user_id
+        FROM conversation_members cm
+        WHERE cm.conversation_id = NEW.conversation_id
+          AND cm.user_id != NEW.sender_id
+          -- Exclude users who have soft-deleted the conversation
+          AND NOT EXISTS (
+            SELECT 1 FROM conversation_deletions cd
+            WHERE cd.conversation_id = NEW.conversation_id AND cd.user_id = cm.user_id
+          )
+      LOOP
+        INSERT INTO notification_events (user_id, type, title, body, payload)
+        VALUES (
+          v_member.user_id,
+          'message',
+          COALESCE(v_conv.group_name, 'Group') || ': ' || v_sender_name,
+          CASE WHEN v_is_prayer THEN 'Sent a prayer request' ELSE 'New message' END,
+          jsonb_build_object(
+            'conversation_id', NEW.conversation_id,
+            'message_id', NEW.id,
+            'sender_id', NEW.sender_id,
+            'group_name', v_conv.group_name,
+            'is_prayer_request', v_is_prayer
+          )
+        );
+      END LOOP;
     END IF;
 
-  -- Handle group conversations
-  ELSIF v_conv.type = 'group' THEN
-    -- Notify all members except the sender
-    FOR v_member IN
-      SELECT cm.user_id
-      FROM conversation_members cm
-      WHERE cm.conversation_id = NEW.conversation_id
-        AND cm.user_id != NEW.sender_id
-        -- Exclude users who have soft-deleted the conversation
-        AND NOT EXISTS (
-          SELECT 1 FROM conversation_deletions cd
-          WHERE cd.conversation_id = NEW.conversation_id AND cd.user_id = cm.user_id
-        )
-    LOOP
-      INSERT INTO notification_events (user_id, type, title, body, payload)
-      VALUES (
-        v_member.user_id,
-        'message',
-        COALESCE(v_conv.group_name, 'Group') || ': ' || v_sender_name,
-        LEFT(NEW.content, 100),
-        jsonb_build_object(
-          'conversation_id', NEW.conversation_id,
-          'message_id', NEW.id,
-          'sender_id', NEW.sender_id,
-          'group_name', v_conv.group_name,
-          'is_prayer_request', NEW.is_prayer_request
-        )
-      );
-    END LOOP;
-  END IF;
+  EXCEPTION WHEN OTHERS THEN
+    -- Log error but don't fail the message insert
+    RAISE WARNING 'Notification trigger error: %', SQLERRM;
+  END;
 
   RETURN NEW;
 END;
