@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
 import { useAuth } from "@/components/AuthGuard";
 import { useToast } from "@/lib/toast";
@@ -52,9 +51,17 @@ export default function FriendsPage() {
     (FriendRequest & { toUser: User })[]
   >([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"friends" | "requests" | "search">(
-    "friends"
-  );
+  const [activeTab, setActiveTab] = useState<
+    "friends" | "requests" | "search" | "invite"
+  >("friends");
+
+  // Share/Invite state
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareEmail, setShareEmail] = useState("");
+  const [shareSending, setShareSending] = useState(false);
+  const [shareError, setShareError] = useState("");
+  const [shareSuccess, setShareSuccess] = useState(false);
+  const [shareLinkCopied, setShareLinkCopied] = useState(false);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
@@ -87,7 +94,6 @@ export default function FriendsPage() {
     Set<string>
   >(new Set());
 
-  const router = useRouter();
   const { user } = useAuth();
   const { showToast } = useToast();
 
@@ -420,6 +426,65 @@ export default function FriendsPage() {
     }
   };
 
+  // Handle share/invite
+  const handleShareInvite = async () => {
+    if (!shareEmail) return;
+
+    setShareSending(true);
+    setShareError("");
+
+    try {
+      const res = await fetch("/api/users/invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: shareEmail,
+          inviterName: user?.fullName || "A friend",
+          inviterUsername: user?.username || "",
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to send invitation");
+      }
+
+      setShareSuccess(true);
+      setShareEmail("");
+      showToast("Invitation sent successfully!", "success");
+    } catch (error) {
+      setShareError(
+        error instanceof Error ? error.message : "Failed to send invitation"
+      );
+    } finally {
+      setShareSending(false);
+    }
+  };
+
+  // Copy share link to clipboard
+  const handleCopyShareLink = async () => {
+    const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+    const shareText = `Hey! Can I pray for you? Sign up on Love1Another and add me: ${user?.username || ""}`;
+    const shareUrl = `${baseUrl}/login?ref=${user?.username || ""}`;
+
+    try {
+      await navigator.clipboard.writeText(`${shareText}\n${shareUrl}`);
+      setShareLinkCopied(true);
+      showToast("Link copied to clipboard!", "success");
+      setTimeout(() => setShareLinkCopied(false), 3000);
+    } catch {
+      showToast("Failed to copy link", "error");
+    }
+  };
+
+  // Reset share modal
+  const resetShareModal = () => {
+    setShowShareModal(false);
+    setShareEmail("");
+    setShareError("");
+    setShareSuccess(false);
+  };
+
   if (isLoading) {
     return (
       <div className="page-center">
@@ -508,6 +573,17 @@ export default function FriendsPage() {
               style={{ fontSize: "var(--text-sm)" }}
             >
               Find
+            </button>
+            <button
+              onClick={() => setActiveTab("invite")}
+              className={`flex-1 py-2 rounded-[var(--radius-sm)] font-medium transition-colors ${
+                activeTab === "invite"
+                  ? "bg-[var(--surface-primary)] text-[var(--text-primary)] shadow-sm"
+                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              }`}
+              style={{ fontSize: "var(--text-sm)" }}
+            >
+              Invite
             </button>
           </div>
 
@@ -610,85 +686,93 @@ export default function FriendsPage() {
                         className="flex items-center"
                         style={{ gap: "var(--space-xs)" }}
                       >
-                        <button
-                          onClick={() => {
-                            if (friend.user) {
-                              setProfileActionUser(friend.user);
-                              fetchProfiles();
-                            }
-                          }}
-                          className={`p-2 rounded-full transition-colors relative ${
+                        <span
+                          className="tooltip-wrapper"
+                          data-tooltip={
                             unlinkedFriendIds.has(friend.id)
-                              ? "bg-[var(--accent-primary)]"
-                              : "hover:bg-[var(--bg-secondary)]"
-                          } ${
-                            justAcceptedFriendIds.has(friend.id)
-                              ? "animate-pulse"
-                              : ""
-                          }`}
-                          title={
-                            unlinkedFriendIds.has(friend.id)
-                              ? "Link to a profile (not connected yet)"
-                              : "Link to profile"
+                              ? "Link to a profile"
+                              : "Linked to profile"
                           }
                         >
-                          {unlinkedFriendIds.has(friend.id) && (
-                            <span
-                              className="absolute -top-1 -right-1 bg-[var(--error)] rounded-full animate-ping"
-                              style={{
-                                width: "8px",
-                                height: "8px",
-                              }}
-                            />
-                          )}
-                          {unlinkedFriendIds.has(friend.id) && (
-                            <span
-                              className="absolute -top-1 -right-1 bg-[var(--error)] rounded-full"
-                              style={{
-                                width: "8px",
-                                height: "8px",
-                              }}
-                            />
-                          )}
-                          <svg
-                            className={
+                          <button
+                            onClick={() => {
+                              if (friend.user) {
+                                setProfileActionUser(friend.user);
+                                fetchProfiles();
+                              }
+                            }}
+                            className={`p-2 rounded-full transition-colors relative ${
                               unlinkedFriendIds.has(friend.id)
-                                ? "text-white"
-                                : "text-[var(--text-muted)] hover:text-[var(--accent-primary)]"
-                            }
-                            style={{ width: "18px", height: "18px" }}
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
+                                ? "bg-[var(--accent-primary)]"
+                                : "hover:bg-[var(--bg-secondary)]"
+                            } ${
+                              justAcceptedFriendIds.has(friend.id)
+                                ? "animate-pulse"
+                                : ""
+                            }`}
                           >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
-                            />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() => setFriendToDelete(friend)}
-                          className="p-2 rounded-full hover:bg-[var(--bg-secondary)] transition-colors"
-                          title="Remove friend"
+                            {unlinkedFriendIds.has(friend.id) && (
+                              <span
+                                className="absolute -top-1 -right-1 bg-[var(--error)] rounded-full animate-ping"
+                                style={{
+                                  width: "8px",
+                                  height: "8px",
+                                }}
+                              />
+                            )}
+                            {unlinkedFriendIds.has(friend.id) && (
+                              <span
+                                className="absolute -top-1 -right-1 bg-[var(--error)] rounded-full"
+                                style={{
+                                  width: "8px",
+                                  height: "8px",
+                                }}
+                              />
+                            )}
+                            <svg
+                              className={
+                                unlinkedFriendIds.has(friend.id)
+                                  ? "text-white"
+                                  : "text-[var(--text-muted)] hover:text-[var(--accent-primary)]"
+                              }
+                              style={{ width: "18px", height: "18px" }}
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+                              />
+                            </svg>
+                          </button>
+                        </span>
+                        <span
+                          className="tooltip-wrapper"
+                          data-tooltip="Remove friend"
                         >
-                          <svg
-                            className="text-[var(--text-muted)] hover:text-[var(--error)]"
-                            style={{ width: "18px", height: "18px" }}
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
+                          <button
+                            onClick={() => setFriendToDelete(friend)}
+                            className="p-2 rounded-full hover:bg-[var(--bg-secondary)] transition-colors"
                           >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                            />
-                          </svg>
-                        </button>
+                            <svg
+                              className="text-[var(--text-muted)] hover:text-[var(--error)]"
+                              style={{ width: "18px", height: "18px" }}
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                              />
+                            </svg>
+                          </button>
+                        </span>
                       </div>
                     </div>
                   ))}
@@ -1046,8 +1130,362 @@ export default function FriendsPage() {
               )}
             </div>
           )}
+
+          {/* Invite Tab */}
+          {activeTab === "invite" && (
+            <div className="animate-fade-in">
+              <div
+                className="card card-elevated"
+                style={{ padding: "var(--space-xl)" }}
+              >
+                <div className="text-center" style={{ marginBottom: "var(--space-xl)" }}>
+                  <div
+                    className="mx-auto bg-[var(--accent-primary-light)] rounded-full flex items-center justify-center"
+                    style={{
+                      width: "64px",
+                      height: "64px",
+                      marginBottom: "var(--space-md)",
+                    }}
+                  >
+                    <svg
+                      className="text-[var(--accent-primary)]"
+                      style={{ width: "32px", height: "32px" }}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={1.5}
+                        d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"
+                      />
+                    </svg>
+                  </div>
+                  <h3
+                    className="font-serif font-semibold text-[var(--text-primary)]"
+                    style={{
+                      fontSize: "var(--text-lg)",
+                      marginBottom: "var(--space-xs)",
+                    }}
+                  >
+                    Invite Friends
+                  </h3>
+                  <p
+                    className="text-[var(--text-secondary)]"
+                    style={{
+                      fontSize: "var(--text-sm)",
+                      lineHeight: "var(--leading-relaxed)",
+                    }}
+                  >
+                    Invite friends and family to join Love1Another and pray together.
+                  </p>
+                </div>
+
+                <div
+                  className="flex flex-col"
+                  style={{ gap: "var(--space-md)" }}
+                >
+                  {/* Copy Invite Link Button */}
+                  <button
+                    className="btn btn-secondary w-full"
+                    onClick={handleCopyShareLink}
+                    style={{
+                      padding: "var(--space-md)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "var(--space-sm)",
+                    }}
+                  >
+                    <svg
+                      style={{ width: "20px", height: "20px" }}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      {shareLinkCopied ? (
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M5 13l4 4L19 7"
+                        />
+                      ) : (
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
+                        />
+                      )}
+                    </svg>
+                    {shareLinkCopied ? "Copied!" : "Copy Invite Link"}
+                  </button>
+
+                  {/* Send Email Invite Button */}
+                  <button
+                    className="btn btn-primary w-full"
+                    onClick={() => setShowShareModal(true)}
+                    style={{
+                      padding: "var(--space-md)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "var(--space-sm)",
+                    }}
+                  >
+                    <svg
+                      style={{ width: "20px", height: "20px" }}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                      />
+                    </svg>
+                    Send Email Invitation
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </main>
+
+      {/* Share/Invite Modal */}
+      {showShareModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{
+            backgroundColor: "rgba(0, 0, 0, 0.8)",
+            backdropFilter: "blur(4px)",
+            padding: "16px",
+          }}
+        >
+          <div
+            className="bg-[var(--surface-primary)] w-full max-w-md"
+            style={{
+              borderRadius: "16px",
+              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)",
+              overflow: "hidden",
+            }}
+          >
+            {/* Header */}
+            <div
+              className="flex items-start justify-between"
+              style={{ padding: "24px 24px 16px" }}
+            >
+              <div style={{ flex: 1 }}>
+                <h3
+                  style={{
+                    fontSize: "18px",
+                    fontWeight: 600,
+                    color: "var(--text-primary)",
+                    marginBottom: "4px",
+                  }}
+                >
+                  Invite a Friend
+                </h3>
+                <p
+                  style={{
+                    fontSize: "14px",
+                    color: "var(--text-muted)",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  Send a personal invitation to join Love1Another.
+                </p>
+              </div>
+              <button
+                onClick={resetShareModal}
+                style={{
+                  padding: "8px",
+                  marginLeft: "16px",
+                  marginTop: "-4px",
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "var(--text-muted)",
+                  borderRadius: "8px",
+                }}
+              >
+                <svg
+                  width="20"
+                  height="20"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+
+            {/* Form content */}
+            <div style={{ padding: "8px 24px 24px" }}>
+              {shareSuccess ? (
+                <div style={{ textAlign: "center", padding: "24px 0" }}>
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: "64px",
+                      height: "64px",
+                      borderRadius: "50%",
+                      backgroundColor: "var(--success-light)",
+                      marginBottom: "16px",
+                    }}
+                  >
+                    <svg width="32" height="32" fill="var(--success)" viewBox="0 0 24 24">
+                      <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                    </svg>
+                  </div>
+                  <h4
+                    style={{
+                      fontSize: "18px",
+                      fontWeight: 600,
+                      color: "var(--text-primary)",
+                      marginBottom: "8px",
+                    }}
+                  >
+                    Invitation Sent!
+                  </h4>
+                  <p
+                    style={{
+                      fontSize: "14px",
+                      color: "var(--text-secondary)",
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    Your friend will receive an email with your personal invitation.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div style={{ marginBottom: "20px" }}>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "14px",
+                        fontWeight: 500,
+                        color: "var(--text-primary)",
+                        marginBottom: "8px",
+                      }}
+                    >
+                      Friend&apos;s Email Address
+                    </label>
+                    <input
+                      type="email"
+                      placeholder="friend@example.com"
+                      value={shareEmail}
+                      onChange={(e) => setShareEmail(e.target.value)}
+                      disabled={shareSending}
+                      className="input"
+                      style={{
+                        width: "100%",
+                        padding: "14px 16px",
+                        fontSize: "15px",
+                      }}
+                    />
+                  </div>
+
+                  {/* Preview */}
+                  <div
+                    style={{
+                      padding: "16px",
+                      backgroundColor: "var(--surface-elevated)",
+                      borderRadius: "12px",
+                    }}
+                  >
+                    <p
+                      style={{
+                        fontSize: "14px",
+                        fontStyle: "italic",
+                        color: "var(--text-secondary)",
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      &quot;Hey! Can I pray for you? Sign up on Love1Another and add
+                      me:{" "}
+                      <strong style={{ color: "var(--accent-primary)" }}>
+                        @{user?.username || "username"}
+                      </strong>
+                      &quot;
+                    </p>
+                    <p
+                      style={{
+                        fontSize: "13px",
+                        color: "var(--text-muted)",
+                        marginTop: "8px",
+                      }}
+                    >
+                      — {user?.fullName || "Your Name"}
+                    </p>
+                  </div>
+
+                  {shareError && (
+                    <div
+                      style={{
+                        marginTop: "16px",
+                        padding: "12px",
+                        backgroundColor: "var(--error-light)",
+                        borderRadius: "8px",
+                        color: "var(--error)",
+                        fontSize: "14px",
+                      }}
+                    >
+                      {shareError}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Footer with buttons */}
+            <div
+              style={{
+                display: "flex",
+                gap: "12px",
+                padding: "16px 24px 24px",
+                borderTop: "1px solid var(--border-light)",
+              }}
+            >
+              <button
+                onClick={resetShareModal}
+                disabled={shareSending}
+                className="btn btn-secondary flex-1"
+                style={{ padding: "14px 20px" }}
+              >
+                {shareSuccess ? "Close" : "Cancel"}
+              </button>
+              {!shareSuccess && (
+                <button
+                  onClick={handleShareInvite}
+                  disabled={!shareEmail || shareSending}
+                  className="btn btn-primary flex-1"
+                  style={{
+                    padding: "14px 20px",
+                    opacity: !shareEmail || shareSending ? 0.5 : 1,
+                  }}
+                >
+                  {shareSending ? "Sending..." : "Send Invitation"}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete Friend Confirmation Modal */}
       {friendToDelete && (

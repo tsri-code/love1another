@@ -3,7 +3,24 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="supported-color-schemes" content="light dark" />
     <title>Confirm Your Email - Love1Another</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        supported-color-schemes: light dark;
+      }
+      @media (prefers-color-scheme: dark) {
+        .otp-code {
+          background: linear-gradient(135deg, #2a3a2a 0%, #1e2e1e 100%) !important;
+          border-color: #7ca87c !important;
+        }
+        .otp-code-text {
+          color: #ffffff !important;
+        }
+      }
+    </style>
   </head>
   <body
     style="
@@ -116,6 +133,7 @@
                   <tr>
                     <td align="center">
                       <div
+                        class="otp-code"
                         style="
                           display: inline-block;
                           padding: 20px 40px;
@@ -129,6 +147,7 @@
                         "
                       >
                         <span
+                          class="otp-code-text"
                           style="
                             font-family: 'Courier New', monospace;
                             font-size: 32px;
