@@ -90,6 +90,11 @@ export function Navbar({
     router.push("/how-to-use");
   };
 
+  const handleContact = () => {
+    setIsMenuOpen(false);
+    router.push("/contact");
+  };
+
   const totalNotifications = pendingRequestCount + unreadMessageCount;
 
   return (
@@ -362,6 +367,23 @@ export function Navbar({
                 />
               </svg>
               How to Use
+            </button>
+
+            <button className="dropdown-item" onClick={handleContact}>
+              <svg
+                style={{ width: "18px", height: "18px" }}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={1.5}
+                  d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                />
+              </svg>
+              Contact Us
             </button>
 
             {/* Donate button hidden for now

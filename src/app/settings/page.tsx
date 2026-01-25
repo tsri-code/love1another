@@ -966,23 +966,25 @@ export default function SettingsPage() {
                   >
                     Encryption & Recovery
                   </h2>
-                  <button
-                    onClick={() => setShowRecoveryInfoModal(true)}
-                    className="pulse-glow-icon flex items-center justify-center w-8 h-8 rounded-full"
-                    style={{
-                      backgroundColor: "rgba(239, 68, 68, 0.2)",
-                      border: "2px solid rgba(239, 68, 68, 0.4)",
-                    }}
-                    aria-label="Learn about recovery codes"
-                  >
-                    <svg
-                      className="w-4 h-4"
-                      fill="#ef4444"
-                      viewBox="0 0 24 24"
+                  <span className="tooltip-wrapper" data-tooltip="What does this mean?">
+                    <button
+                      onClick={() => setShowRecoveryInfoModal(true)}
+                      className="pulse-glow-icon flex items-center justify-center w-8 h-8 rounded-full"
+                      style={{
+                        backgroundColor: "rgba(239, 68, 68, 0.2)",
+                        border: "2px solid rgba(239, 68, 68, 0.4)",
+                      }}
+                      aria-label="Learn about recovery codes"
                     >
-                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-                    </svg>
-                  </button>
+                      <svg
+                        className="w-4 h-4"
+                        fill="#ef4444"
+                        viewBox="0 0 24 24"
+                      >
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                      </svg>
+                    </button>
+                  </span>
                 </div>
               </div>
 
@@ -1758,7 +1760,7 @@ export default function SettingsPage() {
                       padding: "8px 24px 24px",
                     }}
                   >
-                    {/* What is a Recovery Code */}
+                    {/* Simple Explanation */}
                     <div
                       style={{
                         padding: "16px",
@@ -1778,20 +1780,24 @@ export default function SettingsPage() {
                           gap: "8px",
                         }}
                       >
-                        <span>🔑</span> What is a Recovery Code?
+                        <span>🔐</span> In Simple Terms
                       </h4>
-                      <p style={{ fontSize: "14px", color: "var(--text-secondary)", lineHeight: 1.6 }}>
-                        Your recovery code is a set of 6 words that acts as a backup key to your encrypted data.
-                        Think of it like a spare key to your house — if you lose your main key (password),
-                        you can use this to get back in.
+                      <p style={{ fontSize: "14px", color: "var(--text-secondary)", lineHeight: 1.7 }}>
+                        Your messages and prayers are <strong>encrypted</strong> — scrambled so only you can read them.
+                        Your password is the key that unscrambles them.
+                      </p>
+                      <p style={{ fontSize: "14px", color: "var(--text-secondary)", lineHeight: 1.7, marginTop: "8px" }}>
+                        Your <strong>recovery code</strong> (6 words) is a backup key. If you ever forget your password and reset it,
+                        you&apos;ll need this code to unlock your encrypted content again.
                       </p>
                     </div>
 
-                    {/* Why is it Important */}
+                    {/* What Happens After Password Reset - CRITICAL */}
                     <div
                       style={{
                         padding: "16px",
-                        backgroundColor: "var(--surface-elevated)",
+                        backgroundColor: "rgba(239, 68, 68, 0.1)",
+                        border: "2px solid rgba(239, 68, 68, 0.3)",
                         borderRadius: "12px",
                         marginBottom: "12px",
                       }}
@@ -1800,20 +1806,26 @@ export default function SettingsPage() {
                         style={{
                           fontSize: "15px",
                           fontWeight: 600,
-                          color: "var(--text-primary)",
-                          marginBottom: "8px",
+                          color: "var(--error)",
+                          marginBottom: "10px",
                           display: "flex",
                           alignItems: "center",
                           gap: "8px",
                         }}
                       >
-                        <span>⚠️</span> Why is it Important?
+                        <span>⚠️</span> After Resetting Your Password
                       </h4>
-                      <p style={{ fontSize: "14px", color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: "8px" }}>
-                        Your encrypted content includes <strong>private messages, prayers, and personal notes</strong> — all protected so only you can read them. Not even we can access them.
+                      <p style={{ fontSize: "14px", color: "var(--text-secondary)", lineHeight: 1.7, marginBottom: "12px" }}>
+                        If you reset your password (forgot it and created a new one), your encrypted content will appear locked.
+                        To unlock it:
                       </p>
-                      <p style={{ fontSize: "14px", color: "var(--text-secondary)", lineHeight: 1.6 }}>
-                        If you forget your password and need to reset it, <strong style={{ color: "var(--error)" }}>your recovery code is the ONLY way</strong> to restore access. Without it, your encrypted data would be permanently lost.
+                      <ol style={{ fontSize: "14px", color: "var(--text-primary)", paddingLeft: "20px", lineHeight: 2, fontWeight: 500 }}>
+                        <li>Come back to <strong>Settings</strong></li>
+                        <li>Click <strong>&ldquo;Restore Encryption on This Device&rdquo;</strong></li>
+                        <li>Enter your <strong>recovery code</strong> and <strong>new password</strong></li>
+                      </ol>
+                      <p style={{ fontSize: "13px", color: "var(--error)", marginTop: "12px", fontWeight: 500 }}>
+                        Without your recovery code, your encrypted data is permanently lost. No one can recover it — not even us.
                       </p>
                     </div>
 
@@ -1837,29 +1849,32 @@ export default function SettingsPage() {
                           gap: "8px",
                         }}
                       >
-                        <span>🔒</span> How to Keep it Safe
+                        <span>💾</span> Save Your Recovery Code
                       </h4>
+                      <p style={{ fontSize: "14px", color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: "12px" }}>
+                        Click <strong>&ldquo;View Recovery Code&rdquo;</strong> below and save it somewhere safe:
+                      </p>
                       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                         <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", fontSize: "14px", color: "var(--text-secondary)" }}>
                           <span style={{ color: "var(--success)", fontWeight: 700, flexShrink: 0 }}>✓</span>
-                          <span>Write it down and store it somewhere safe</span>
+                          <span>Write it on paper and store somewhere secure</span>
                         </div>
                         <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", fontSize: "14px", color: "var(--text-secondary)" }}>
                           <span style={{ color: "var(--success)", fontWeight: 700, flexShrink: 0 }}>✓</span>
-                          <span>Save it in a password manager</span>
+                          <span>Save it in a password manager (1Password, Bitwarden, etc.)</span>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", fontSize: "14px", color: "var(--text-secondary)" }}>
+                          <span style={{ color: "var(--error)", fontWeight: 700, flexShrink: 0 }}>✗</span>
+                          <span>Don&apos;t screenshot it or save it in Notes app</span>
                         </div>
                         <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", fontSize: "14px", color: "var(--text-secondary)" }}>
                           <span style={{ color: "var(--error)", fontWeight: 700, flexShrink: 0 }}>✗</span>
                           <span>Never share it with anyone</span>
                         </div>
-                        <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", fontSize: "14px", color: "var(--text-secondary)" }}>
-                          <span style={{ color: "var(--error)", fontWeight: 700, flexShrink: 0 }}>✗</span>
-                          <span>Don&apos;t store it in an easily accessible place on your device</span>
-                        </div>
                       </div>
                     </div>
 
-                    {/* Viewing Your Recovery Code */}
+                    {/* Why the Warning Icon */}
                     <div
                       style={{
                         padding: "16px",
@@ -1879,17 +1894,15 @@ export default function SettingsPage() {
                           gap: "8px",
                         }}
                       >
-                        <span>👁️</span> Viewing Your Recovery Code
+                        <span>❓</span> Why the Flashing Alert?
                       </h4>
                       <p style={{ fontSize: "14px", color: "var(--text-secondary)", lineHeight: 1.6 }}>
-                        For security, viewing your recovery code requires two-step verification:
+                        This is a friendly reminder to make sure you&apos;ve saved your recovery code.
+                        Many people skip this step and lose access to their data after a password reset.
                       </p>
-                      <ol style={{ fontSize: "14px", color: "var(--text-secondary)", marginTop: "8px", paddingLeft: "20px", lineHeight: 1.8 }}>
-                        <li>Enter your password</li>
-                        <li>Enter a 6-digit code sent to your email</li>
-                      </ol>
-                      <p style={{ fontSize: "13px", color: "var(--text-muted)", marginTop: "8px" }}>
-                        This ensures that even if someone knows your password, they can&apos;t access your recovery code without access to your email.
+                      <p style={{ fontSize: "14px", color: "var(--text-secondary)", lineHeight: 1.6, marginTop: "8px" }}>
+                        Once you&apos;ve viewed and saved your recovery code, you can feel confident that
+                        your encrypted content is always recoverable.
                       </p>
                     </div>
                   </div>

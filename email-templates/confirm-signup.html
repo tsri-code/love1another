@@ -11,14 +11,21 @@
         color-scheme: light dark;
         supported-color-schemes: light dark;
       }
+      /* Force text visibility in dark mode email clients */
       @media (prefers-color-scheme: dark) {
         .otp-code {
-          background: linear-gradient(135deg, #2a3a2a 0%, #1e2e1e 100%) !important;
-          border-color: #7ca87c !important;
+          background-color: #1a1a1a !important;
+          border-color: #6b8e6b !important;
         }
         .otp-code-text {
           color: #ffffff !important;
+          -webkit-text-fill-color: #ffffff !important;
         }
+      }
+      /* Fallback for email clients that strip media queries */
+      [data-ogsc] .otp-code-text,
+      [data-ogsb] .otp-code-text {
+        color: #ffffff !important;
       }
     </style>
   </head>
@@ -128,7 +135,7 @@
                   Enter this verification code to confirm your email:
                 </p>
 
-                <!-- OTP Code Box -->
+                <!-- OTP Code Box - Dark background with white text works in both light/dark mode -->
                 <table width="100%" cellpadding="0" cellspacing="0">
                   <tr>
                     <td align="center">
@@ -137,11 +144,7 @@
                         style="
                           display: inline-block;
                           padding: 20px 40px;
-                          background: linear-gradient(
-                            135deg,
-                            #f5f3ef 0%,
-                            #ebe7e0 100%
-                          );
+                          background-color: #2d3b2d;
                           border: 2px solid #6b8e6b;
                           border-radius: 12px;
                         "
@@ -153,7 +156,7 @@
                             font-size: 32px;
                             font-weight: 700;
                             letter-spacing: 8px;
-                            color: #1a1a1a;
+                            color: #ffffff;
                           "
                         >
                           {{ .Token }}

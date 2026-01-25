@@ -381,10 +381,29 @@ export function LandingPage() {
           </p>
 
           <p
+            className="text-[var(--text-secondary)]"
+            style={{
+              fontSize: "var(--text-base)",
+              lineHeight: "var(--leading-relaxed)",
+              marginBottom: "var(--space-md)",
+            }}
+          >
+            <strong>Delete anytime:</strong> When you delete your account, all
+            your data is permanently erased. No backups, no traces — gone forever.
+          </p>
+
+          <p
+            className="text-[var(--text-muted)]"
+            style={{ fontSize: "var(--text-sm)", marginBottom: "var(--space-md)" }}
+          >
+            Built with love for the Body of Christ.
+          </p>
+
+          <p
             className="text-[var(--text-muted)]"
             style={{ fontSize: "var(--text-sm)" }}
           >
-            Built with love for the Body of Christ.
+            Questions? Create a free account and message <strong>@support</strong> directly in the app.
           </p>
         </div>
       </section>
