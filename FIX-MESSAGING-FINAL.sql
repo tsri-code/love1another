@@ -1302,7 +1302,397 @@ GRANT EXECUTE ON FUNCTION public.admin_remove_member TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_delete_group TO authenticated;
 
 -- =============================================================================
--- STEP 7: REFRESH POSTGREST SCHEMA CACHE
+-- STEP 7: REALTIME NOTIFICATIONS SYSTEM
+-- =============================================================================
+-- This creates a dedicated table for realtime notifications that bypasses
+-- the deny-all RLS on the messages table. Users can subscribe to their own
+-- notifications via Supabase Realtime.
+
+-- -----------------------------------------------------------------------------
+-- Create notification_events table
+-- -----------------------------------------------------------------------------
+DROP TABLE IF EXISTS public.notification_events CASCADE;
+
+CREATE TABLE public.notification_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK (type IN ('message', 'friend_request', 'friend_accepted', 'group_invite')),
+  title TEXT NOT NULL,
+  body TEXT,
+  payload JSONB DEFAULT '{}',
+  read BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Index for fast lookups by user
+CREATE INDEX idx_notification_events_user ON public.notification_events(user_id, created_at DESC);
+CREATE INDEX idx_notification_events_unread ON public.notification_events(user_id, read) WHERE read = FALSE;
+
+-- Enable RLS
+ALTER TABLE public.notification_events ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies - Users can only see/update their own notifications
+CREATE POLICY "Users can view own notifications"
+  ON public.notification_events FOR SELECT
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own notifications"
+  ON public.notification_events FOR UPDATE
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own notifications"
+  ON public.notification_events FOR DELETE
+  USING (auth.uid() = user_id);
+
+-- System can insert (via trigger with SECURITY DEFINER)
+-- No direct INSERT policy needed since triggers handle this
+
+-- -----------------------------------------------------------------------------
+-- Enable Realtime for notification_events
+-- -----------------------------------------------------------------------------
+-- This allows Supabase Realtime subscriptions to work
+ALTER PUBLICATION supabase_realtime ADD TABLE public.notification_events;
+
+-- -----------------------------------------------------------------------------
+-- Function: Create notification (SECURITY DEFINER to bypass RLS)
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.create_notification(
+  p_user_id UUID,
+  p_type TEXT,
+  p_title TEXT,
+  p_body TEXT DEFAULT NULL,
+  p_payload JSONB DEFAULT '{}'
+)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_notification_id UUID;
+BEGIN
+  INSERT INTO notification_events (user_id, type, title, body, payload)
+  VALUES (p_user_id, p_type, p_title, p_body, p_payload)
+  RETURNING id INTO v_notification_id;
+
+  RETURN v_notification_id;
+END;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Trigger: Create notification when a message is sent
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.trigger_message_notification()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_conv RECORD;
+  v_sender_name TEXT;
+  v_recipient_id UUID;
+  v_member RECORD;
+BEGIN
+  -- Get conversation details
+  SELECT * INTO v_conv FROM conversations WHERE id = NEW.conversation_id;
+
+  IF NOT FOUND THEN
+    RETURN NEW;
+  END IF;
+
+  -- Get sender name
+  SELECT COALESCE(
+    raw_user_meta_data->>'full_name',
+    raw_user_meta_data->>'name',
+    email
+  ) INTO v_sender_name
+  FROM auth.users WHERE id = NEW.sender_id;
+
+  v_sender_name := COALESCE(v_sender_name, 'Someone');
+
+  -- Handle private conversations
+  IF v_conv.type = 'private' THEN
+    -- Notify the other user
+    IF v_conv.user1_id = NEW.sender_id THEN
+      v_recipient_id := v_conv.user2_id;
+    ELSE
+      v_recipient_id := v_conv.user1_id;
+    END IF;
+
+    -- Check if recipient has soft-deleted the conversation
+    IF NOT EXISTS (
+      SELECT 1 FROM conversation_deletions
+      WHERE conversation_id = NEW.conversation_id AND user_id = v_recipient_id
+    ) THEN
+      INSERT INTO notification_events (user_id, type, title, body, payload)
+      VALUES (
+        v_recipient_id,
+        'message',
+        v_sender_name,
+        LEFT(NEW.content, 100),
+        jsonb_build_object(
+          'conversation_id', NEW.conversation_id,
+          'message_id', NEW.id,
+          'sender_id', NEW.sender_id,
+          'is_prayer_request', NEW.is_prayer_request
+        )
+      );
+    END IF;
+
+  -- Handle group conversations
+  ELSIF v_conv.type = 'group' THEN
+    -- Notify all members except the sender
+    FOR v_member IN
+      SELECT cm.user_id
+      FROM conversation_members cm
+      WHERE cm.conversation_id = NEW.conversation_id
+        AND cm.user_id != NEW.sender_id
+        -- Exclude users who have soft-deleted the conversation
+        AND NOT EXISTS (
+          SELECT 1 FROM conversation_deletions cd
+          WHERE cd.conversation_id = NEW.conversation_id AND cd.user_id = cm.user_id
+        )
+    LOOP
+      INSERT INTO notification_events (user_id, type, title, body, payload)
+      VALUES (
+        v_member.user_id,
+        'message',
+        COALESCE(v_conv.group_name, 'Group') || ': ' || v_sender_name,
+        LEFT(NEW.content, 100),
+        jsonb_build_object(
+          'conversation_id', NEW.conversation_id,
+          'message_id', NEW.id,
+          'sender_id', NEW.sender_id,
+          'group_name', v_conv.group_name,
+          'is_prayer_request', NEW.is_prayer_request
+        )
+      );
+    END LOOP;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+-- Create the trigger
+DROP TRIGGER IF EXISTS on_message_insert_notification ON public.messages;
+CREATE TRIGGER on_message_insert_notification
+  AFTER INSERT ON public.messages
+  FOR EACH ROW
+  EXECUTE FUNCTION public.trigger_message_notification();
+
+-- -----------------------------------------------------------------------------
+-- Trigger: Create notification when a friend request is sent
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.trigger_friend_request_notification()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_requester_name TEXT;
+  v_recipient_id UUID;
+BEGIN
+  -- Only notify on new pending requests
+  IF NEW.status != 'pending' THEN
+    RETURN NEW;
+  END IF;
+
+  -- Get requester name
+  SELECT COALESCE(
+    raw_user_meta_data->>'full_name',
+    raw_user_meta_data->>'name',
+    email
+  ) INTO v_requester_name
+  FROM auth.users WHERE id = NEW.requester_id;
+
+  v_requester_name := COALESCE(v_requester_name, 'Someone');
+
+  -- Determine recipient (the user who didn't send the request)
+  IF NEW.user1_id = NEW.requester_id THEN
+    v_recipient_id := NEW.user2_id;
+  ELSE
+    v_recipient_id := NEW.user1_id;
+  END IF;
+
+  INSERT INTO notification_events (user_id, type, title, body, payload)
+  VALUES (
+    v_recipient_id,
+    'friend_request',
+    'New Friend Request',
+    v_requester_name || ' wants to connect with you',
+    jsonb_build_object(
+      'requester_id', NEW.requester_id,
+      'friendship_id', NEW.id
+    )
+  );
+
+  RETURN NEW;
+END;
+$$;
+
+-- Create the trigger
+DROP TRIGGER IF EXISTS on_friendship_insert_notification ON public.friendships;
+CREATE TRIGGER on_friendship_insert_notification
+  AFTER INSERT ON public.friendships
+  FOR EACH ROW
+  EXECUTE FUNCTION public.trigger_friend_request_notification();
+
+-- -----------------------------------------------------------------------------
+-- Trigger: Notify when a friend request is accepted
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.trigger_friend_accepted_notification()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_accepter_name TEXT;
+  v_accepter_id UUID;
+BEGIN
+  -- Only notify when status changes to 'accepted'
+  IF OLD.status = 'pending' AND NEW.status = 'accepted' THEN
+    -- The accepter is NOT the original requester
+    IF NEW.user1_id = NEW.requester_id THEN
+      v_accepter_id := NEW.user2_id;
+    ELSE
+      v_accepter_id := NEW.user1_id;
+    END IF;
+
+    -- Get accepter name
+    SELECT COALESCE(
+      raw_user_meta_data->>'full_name',
+      raw_user_meta_data->>'name',
+      email
+    ) INTO v_accepter_name
+    FROM auth.users WHERE id = v_accepter_id;
+
+    v_accepter_name := COALESCE(v_accepter_name, 'Someone');
+
+    -- Notify the original requester
+    INSERT INTO notification_events (user_id, type, title, body, payload)
+    VALUES (
+      NEW.requester_id,
+      'friend_accepted',
+      'Friend Request Accepted',
+      v_accepter_name || ' accepted your friend request',
+      jsonb_build_object(
+        'accepter_id', v_accepter_id,
+        'friendship_id', NEW.id
+      )
+    );
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+-- Create the trigger
+DROP TRIGGER IF EXISTS on_friendship_update_notification ON public.friendships;
+CREATE TRIGGER on_friendship_update_notification
+  AFTER UPDATE ON public.friendships
+  FOR EACH ROW
+  EXECUTE FUNCTION public.trigger_friend_accepted_notification();
+
+-- -----------------------------------------------------------------------------
+-- Function: Mark notifications as read
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.mark_notifications_read(
+  p_notification_ids UUID[] DEFAULT NULL,
+  p_mark_all BOOLEAN DEFAULT FALSE
+)
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_user_id UUID;
+  v_count INTEGER;
+BEGIN
+  v_user_id := auth.uid();
+
+  IF p_mark_all THEN
+    UPDATE notification_events
+    SET read = TRUE
+    WHERE user_id = v_user_id AND read = FALSE;
+  ELSE
+    UPDATE notification_events
+    SET read = TRUE
+    WHERE user_id = v_user_id AND id = ANY(p_notification_ids);
+  END IF;
+
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
+END;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Function: Get unread notification count
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.get_unread_notification_count()
+RETURNS TABLE (
+  total INTEGER,
+  messages INTEGER,
+  friend_requests INTEGER
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_user_id UUID;
+BEGIN
+  v_user_id := auth.uid();
+
+  RETURN QUERY
+  SELECT
+    COUNT(*)::INTEGER as total,
+    COUNT(*) FILTER (WHERE type = 'message')::INTEGER as messages,
+    COUNT(*) FILTER (WHERE type = 'friend_request')::INTEGER as friend_requests
+  FROM notification_events
+  WHERE user_id = v_user_id AND read = FALSE;
+END;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Function: Cleanup old notifications (run periodically)
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.cleanup_old_notifications()
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_count INTEGER;
+BEGIN
+  -- Delete read notifications older than 7 days
+  DELETE FROM notification_events
+  WHERE read = TRUE AND created_at < NOW() - INTERVAL '7 days';
+
+  -- Delete unread notifications older than 30 days
+  DELETE FROM notification_events
+  WHERE read = FALSE AND created_at < NOW() - INTERVAL '30 days';
+
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
+END;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Grant permissions
+-- -----------------------------------------------------------------------------
+GRANT EXECUTE ON FUNCTION public.create_notification TO authenticated;
+GRANT EXECUTE ON FUNCTION public.mark_notifications_read TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_unread_notification_count TO authenticated;
+GRANT EXECUTE ON FUNCTION public.cleanup_old_notifications TO authenticated;
+
+-- =============================================================================
+-- STEP 8: REFRESH POSTGREST SCHEMA CACHE
 -- =============================================================================
 
 NOTIFY pgrst, 'reload schema';
@@ -1310,4 +1700,4 @@ NOTIFY pgrst, 'reload schema';
 -- =============================================================================
 -- DONE!
 -- =============================================================================
-SELECT 'SUCCESS! Messaging system rebuilt with SECURITY DEFINER functions.' as result;
+SELECT 'SUCCESS! Messaging system with REALTIME NOTIFICATIONS ready.' as result;

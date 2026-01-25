@@ -334,21 +334,30 @@ export function MessagesButton({
     }
   }, [user?.id]);
 
-  // Fetch conversations on mount, when modal opens, and poll periodically for notifications
+  // Fetch conversations on mount and listen for realtime refresh events
   useEffect(() => {
     if (!user?.id) return;
-    
+
     // Initial fetch
     fetchConversations();
-    
-    // Poll every 30 seconds for new messages (for notification badges)
+
+    // Listen for realtime notification events to refresh conversations
+    const handleRealtimeRefresh = () => {
+      fetchConversations();
+    };
+    window.addEventListener("refreshConversations", handleRealtimeRefresh);
+
+    // Fallback poll every 60 seconds (realtime handles instant updates)
     const pollInterval = setInterval(() => {
       fetchConversations();
-    }, 30000);
-    
-    return () => clearInterval(pollInterval);
+    }, 60000);
+
+    return () => {
+      window.removeEventListener("refreshConversations", handleRealtimeRefresh);
+      clearInterval(pollInterval);
+    };
   }, [user?.id, fetchConversations]);
-  
+
   // Also fetch when modal opens (for immediate refresh)
   useEffect(() => {
     if (isOpen && user?.id) {

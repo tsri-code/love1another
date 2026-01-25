@@ -12,10 +12,22 @@ import {
 import { createClient } from "@/lib/supabase";
 import { useToast } from "@/lib/toast";
 
+interface NotificationEvent {
+  id: string;
+  user_id: string;
+  type: "message" | "friend_request" | "friend_accepted" | "group_invite";
+  title: string;
+  body: string | null;
+  payload: Record<string, unknown>;
+  read: boolean;
+  created_at: string;
+}
+
 interface NotificationContextType {
   unreadMessages: number;
   pendingFriendRequests: number;
   refreshCounts: () => Promise<void>;
+  markAllRead: () => Promise<void>;
   playMessageSound: () => void;
   playFriendRequestSound: () => void;
   // Sound settings
@@ -29,6 +41,7 @@ const NotificationContext = createContext<NotificationContextType>({
   unreadMessages: 0,
   pendingFriendRequests: 0,
   refreshCounts: async () => {},
+  markAllRead: async () => {},
   playMessageSound: () => {},
   playFriendRequestSound: () => {},
   messageSoundEnabled: true,
@@ -77,7 +90,7 @@ export function NotificationProvider({
   // Initialize audio elements
   useEffect(() => {
     if (typeof window !== "undefined") {
-      messageAudioRef.current = new Audio("/sounds/message.aac");
+      messageAudioRef.current = new Audio("/sounds/messages.aac");
       messageAudioRef.current.volume = 0.5;
 
       friendRequestAudioRef.current = new Audio("/sounds/friend-request.aac");
@@ -130,25 +143,42 @@ export function NotificationProvider({
     }
   }, [friendRequestSoundEnabled]);
 
+  // Fetch notification counts from the database
   const refreshCounts = useCallback(async () => {
     if (!userId) return;
 
     try {
-      // Fetch unread message count
-      const msgRes = await fetch("/api/messages?unreadOnly=true");
-      if (msgRes.ok) {
-        const data = await msgRes.json();
-        setUnreadMessages(data.unreadCount || 0);
+      const supabase = createClient();
+
+      // Use the RPC function to get unread counts
+      const { data, error } = await supabase.rpc("get_unread_notification_count");
+
+      if (error) {
+        console.error("Error fetching notification counts:", error);
+        return;
       }
 
-      // Fetch pending friend requests
-      const friendRes = await fetch("/api/friends?type=pending");
-      if (friendRes.ok) {
-        const data = await friendRes.json();
-        setPendingFriendRequests(data.pendingRequests?.length || 0);
+      if (data && data.length > 0) {
+        const counts = data[0];
+        setUnreadMessages(counts.messages || 0);
+        setPendingFriendRequests(counts.friend_requests || 0);
       }
     } catch (error) {
       console.error("Error fetching notification counts:", error);
+    }
+  }, [userId]);
+
+  // Mark all notifications as read
+  const markAllRead = useCallback(async () => {
+    if (!userId) return;
+
+    try {
+      const supabase = createClient();
+      await supabase.rpc("mark_notifications_read", { p_mark_all: true });
+      setUnreadMessages(0);
+      setPendingFriendRequests(0);
+    } catch (error) {
+      console.error("Error marking notifications as read:", error);
     }
   }, [userId]);
 
@@ -165,106 +195,72 @@ export function NotificationProvider({
     updateTabTitle(totalNotifications);
   }, [unreadMessages, pendingFriendRequests, updateTabTitle]);
 
-  // Set up Supabase Realtime subscriptions
+  // Set up Supabase Realtime subscription to notification_events table
   useEffect(() => {
     if (!userId) return;
 
     const supabase = createClient();
 
-    // Subscribe to new messages
-    const messagesChannel = supabase
-      .channel("messages-notifications")
+    // Subscribe to notification_events table for this user
+    // RLS ensures we only receive our own notifications
+    const channel = supabase
+      .channel(`notifications:${userId}`)
       .on(
         "postgres_changes",
         {
           event: "INSERT",
           schema: "public",
-          table: "messages",
+          table: "notification_events",
+          filter: `user_id=eq.${userId}`,
         },
         (payload) => {
-          // Check if message is for current user (not sent by them)
-          const newMessage = payload.new as {
-            sender_id: string;
-            conversation_id: string;
-          };
-          if (newMessage.sender_id !== userId) {
-            setUnreadMessages((prev) => prev + 1);
-            playMessageSound();
-            showToast("New message received!", "info");
+          const notification = payload.new as NotificationEvent;
+
+          // Update counts based on notification type
+          switch (notification.type) {
+            case "message":
+              setUnreadMessages((prev) => prev + 1);
+              playMessageSound();
+              showToast(notification.title, "info");
+              break;
+
+            case "friend_request":
+              setPendingFriendRequests((prev) => prev + 1);
+              playFriendRequestSound();
+              showToast(notification.title, "info");
+              break;
+
+            case "friend_accepted":
+              playFriendRequestSound();
+              showToast(notification.body || "Friend request accepted!", "success");
+              break;
+
+            case "group_invite":
+              playMessageSound();
+              showToast(notification.title, "info");
+              break;
           }
+
+          // Dispatch custom event for MessagesButton to refresh
+          window.dispatchEvent(new CustomEvent("refreshConversations"));
         }
       )
-      .subscribe();
-
-    // Subscribe to new friend requests
-    const friendsChannel = supabase
-      .channel("friends-notifications")
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "friendships",
-        },
-        (payload) => {
-          const newFriendship = payload.new as {
-            user1_id: string;
-            user2_id: string;
-            requester_id: string;
-            status: string;
-          };
-          // Check if this is a request TO the current user
-          const isRecipient =
-            (newFriendship.user1_id === userId ||
-              newFriendship.user2_id === userId) &&
-            newFriendship.requester_id !== userId &&
-            newFriendship.status === "pending";
-
-          if (isRecipient) {
-            setPendingFriendRequests((prev) => prev + 1);
-            playFriendRequestSound();
-            showToast("New friend request!", "info");
-          }
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          console.log("Realtime notifications connected");
+        } else if (status === "CHANNEL_ERROR") {
+          console.error("Realtime notifications failed to connect");
         }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "friendships",
-        },
-        (payload) => {
-          const updated = payload.new as {
-            user1_id: string;
-            user2_id: string;
-            requester_id: string;
-            status: string;
-          };
-          // If a friend request was accepted and I was the requester
-          if (
-            updated.status === "accepted" &&
-            updated.requester_id === userId
-          ) {
-            showToast("Friend request accepted! 🎉", "success");
-            playFriendRequestSound();
-          }
-          // Refresh counts when any friendship status changes
-          refreshCounts();
-        }
-      )
-      .subscribe();
+      });
 
-    // Cleanup subscriptions
+    // Cleanup subscription
     return () => {
-      supabase.removeChannel(messagesChannel);
-      supabase.removeChannel(friendsChannel);
+      supabase.removeChannel(channel);
     };
   }, [
     userId,
     playMessageSound,
     playFriendRequestSound,
-    refreshCounts,
     showToast,
   ]);
 
@@ -274,6 +270,7 @@ export function NotificationProvider({
         unreadMessages,
         pendingFriendRequests,
         refreshCounts,
+        markAllRead,
         playMessageSound,
         playFriendRequestSound,
         messageSoundEnabled,
