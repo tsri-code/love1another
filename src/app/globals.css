@@ -672,6 +672,22 @@ a:hover {
   border-bottom-color: var(--surface-primary);
 }
 
+/* Hide tooltips on touch devices - hover doesn't work well */
+@media (hover: none) and (pointer: coarse) {
+  .tooltip-wrapper::after,
+  .tooltip-wrapper::before {
+    display: none !important;
+  }
+}
+
+/* Also hide on small screens where tooltips might overflow */
+@media (max-width: 480px) {
+  .tooltip-wrapper::after,
+  .tooltip-wrapper::before {
+    display: none !important;
+  }
+}
+
 /* ============================================
    ANIMATIONS
    ============================================ */
