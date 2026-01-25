@@ -110,7 +110,7 @@ export default function LinkPrayerListPage({
         // Check if encryption is unlocked
         const unlocked = await checkUnlocked(user.id);
         if (!unlocked) {
-          showToast("Please log in again to access encrypted data", "error");
+          showToast("Please log in again to access your data", "error");
           router.push("/login");
           return;
         }
@@ -150,7 +150,6 @@ export default function LinkPrayerListPage({
             const actualCount = decryptedPrayers.filter((p) => !p.answered).length;
             const storedCount = prayersData.prayerCount ?? 0;
             if (actualCount !== storedCount) {
-              console.log(`[Sync] Prayer count mismatch: stored=${storedCount}, actual=${actualCount}. Syncing...`);
               // Update the count in the background (don't wait)
               fetch(`/api/links/${id}/prayers`, {
                 method: "POST",
@@ -161,18 +160,13 @@ export default function LinkPrayerListPage({
                   prayerCount: actualCount,
                 }),
               })
-                .then((res) => {
-                  if (res.ok) {
-                    console.log(`[Sync] Prayer count synced successfully: ${actualCount}`);
-                  } else {
-                    console.warn(`[Sync] Failed to sync prayer count: ${res.status}`);
-                  }
-                })
-                .catch((err) => console.warn("[Sync] Failed to sync prayer count:", err));
+                .catch(() => {
+                  // Silent fail - sync will retry next time
+                });
             }
           } catch (decryptError) {
             console.error("Failed to decrypt prayers:", decryptError);
-            showToast("Could not decrypt prayers", "error");
+            showToast("Could not load prayers. Please try again.", "error");
             setPrayers([]);
           }
         } else {

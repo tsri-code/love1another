@@ -166,7 +166,6 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
       if (isExpired) {
         // Try to refresh the session
-        console.log("[Auth] Access token expired, attempting refresh...");
         const { data: refreshData, error: refreshError } =
           await supabase.auth.refreshSession();
 
@@ -192,7 +191,6 @@ export function AuthGuard({ children }: AuthGuardProps) {
           return null;
         }
 
-        console.log("[Auth] Session refreshed successfully");
         return refreshData.session;
       }
 
@@ -299,8 +297,6 @@ export function AuthGuard({ children }: AuthGuardProps) {
       ) {
         return;
       }
-
-      console.log("[Auth] State change:", event);
 
       switch (event) {
         case "SIGNED_IN":

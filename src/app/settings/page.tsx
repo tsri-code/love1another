@@ -556,9 +556,21 @@ export default function SettingsPage() {
 
       showToast("Account deleted successfully", "success");
 
-      // Sign out and redirect
+      // Clear local auth state and redirect
+      // Note: signOut may fail with 403 since user no longer exists - that's expected
       const supabase = createClient();
-      await supabase.auth.signOut();
+      try {
+        await supabase.auth.signOut({ scope: "local" });
+      } catch {
+        // Ignore - user is already deleted, just clear local state
+      }
+      
+      // Clear any remaining local storage
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("rememberMe");
+        sessionStorage.clear();
+      }
+      
       router.push("/login");
     } catch (error) {
       console.error("Delete account error:", error);

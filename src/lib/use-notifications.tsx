@@ -154,7 +154,7 @@ export function NotificationProvider({
       const { data, error } = await supabase.rpc("get_unread_notification_count");
 
       if (error) {
-        console.error("Error fetching notification counts:", error);
+        // Silent fail - notifications will retry on next poll
         return;
       }
 
@@ -163,8 +163,8 @@ export function NotificationProvider({
         setUnreadMessages(counts.messages || 0);
         setPendingFriendRequests(counts.friend_requests || 0);
       }
-    } catch (error) {
-      console.error("Error fetching notification counts:", error);
+    } catch {
+      // Silent fail - notifications will retry on next poll
     }
   }, [userId]);
 
@@ -177,8 +177,8 @@ export function NotificationProvider({
       await supabase.rpc("mark_notifications_read", { p_mark_all: true });
       setUnreadMessages(0);
       setPendingFriendRequests(0);
-    } catch (error) {
-      console.error("Error marking notifications as read:", error);
+    } catch {
+      // Silent fail
     }
   }, [userId]);
 
@@ -245,13 +245,7 @@ export function NotificationProvider({
           window.dispatchEvent(new CustomEvent("refreshConversations"));
         }
       )
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          console.log("Realtime notifications connected");
-        } else if (status === "CHANNEL_ERROR") {
-          console.error("Realtime notifications failed to connect");
-        }
-      });
+      .subscribe();
 
     // Cleanup subscription
     return () => {

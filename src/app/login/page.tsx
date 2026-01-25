@@ -30,6 +30,9 @@ export default function LoginPage() {
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(
     null
   );
+  const [emailError, setEmailError] = useState("");
+  const [isCheckingEmail, setIsCheckingEmail] = useState(false);
+  const [emailAvailable, setEmailAvailable] = useState<boolean | null>(null);
   const [otpCode, setOtpCode] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -184,6 +187,48 @@ export default function LoginPage() {
     return () => clearTimeout(timer);
   }, [username, mode]);
 
+  // Check email availability when it changes (signup mode only)
+  useEffect(() => {
+    if (mode !== "signup" || !email) {
+      setEmailAvailable(null);
+      setEmailError("");
+      return;
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // Basic email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(normalizedEmail)) {
+      setEmailError("Invalid email format");
+      setEmailAvailable(false);
+      return;
+    }
+
+    setIsCheckingEmail(true);
+    setEmailError("");
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `/api/users/check-email?email=${encodeURIComponent(normalizedEmail)}`
+        );
+        const data = await res.json();
+        setEmailAvailable(data.available);
+        if (!data.available && data.error) {
+          setEmailError(data.error);
+        }
+      } catch {
+        // On error, assume available and let signup handle it
+        setEmailAvailable(true);
+      } finally {
+        setIsCheckingEmail(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [email, mode]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -292,7 +337,7 @@ export default function LoginPage() {
           } else {
             // No recovery code set up - data is lost, continue to app
             console.warn("DEK unlock failed and no recovery code available");
-            setError("Your encrypted data could not be restored. Recovery code was not set up.");
+            setError("Your data could not be restored. Please set up a recovery code in Settings.");
             // Still redirect - user can set up new encryption
             router.push("/");
             router.refresh();
@@ -379,6 +424,11 @@ export default function LoginPage() {
 
     if (!email.trim() || !email.includes("@")) {
       setError("Please enter a valid email");
+      return;
+    }
+
+    if (emailAvailable === false) {
+      setError("This email is already registered. Please sign in instead.");
       return;
     }
 
@@ -1539,16 +1589,72 @@ export default function LoginPage() {
               <label className="label" htmlFor="signupEmail">
                 Email
               </label>
-              <input
-                id="signupEmail"
-                type="email"
-                className="input"
-                placeholder="your@email.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete="email"
-                required
-              />
+              <div style={{ position: "relative" }}>
+                <input
+                  id="signupEmail"
+                  type="email"
+                  className="input"
+                  placeholder="your@email.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="email"
+                  required
+                  style={{
+                    paddingRight: "40px",
+                    borderColor: emailError
+                      ? "var(--error)"
+                      : emailAvailable === true
+                      ? "var(--success)"
+                      : undefined,
+                  }}
+                />
+                {isCheckingEmail && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      right: "12px",
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                    }}
+                  >
+                    <LoadingSpinner />
+                  </div>
+                )}
+                {!isCheckingEmail && emailAvailable === true && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      right: "12px",
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      color: "var(--success)",
+                    }}
+                  >
+                    ✓
+                  </div>
+                )}
+                {!isCheckingEmail && emailAvailable === false && email.includes("@") && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      right: "12px",
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      color: "var(--error)",
+                    }}
+                  >
+                    ✗
+                  </div>
+                )}
+              </div>
+              {emailError && (
+                <p
+                  className="form-error"
+                  style={{ marginTop: "var(--space-xs)" }}
+                >
+                  {emailError}
+                </p>
+              )}
             </div>
 
             <div className="form-group">
@@ -1605,6 +1711,8 @@ export default function LoginPage() {
                 !usernameAvailable ||
                 isCheckingUsername ||
                 !email ||
+                !emailAvailable ||
+                isCheckingEmail ||
                 !password ||
                 !confirmPassword
               }

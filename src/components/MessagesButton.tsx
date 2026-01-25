@@ -1535,7 +1535,6 @@ function ThreadView({
           return res.json();
         })
         .then((data) => {
-          console.log("Group members fetched:", data);
           setGroupMembers(data.members || []);
           setIsAdmin(data.isAdmin || false);
           setCanLeave(data.canLeave !== false);
@@ -1572,8 +1571,8 @@ function ThreadView({
       if (res.ok) {
         setGroupMembers((prev) => prev.filter((m) => m.userId !== memberId));
       } else {
-        const data = await res.json();
-        alert(data.error || "Failed to remove member");
+        await res.json();
+        alert("Could not remove member. Please try again.");
       }
     } catch (err) {
       console.error("Error removing member:", err);
@@ -1612,8 +1611,8 @@ function ThreadView({
           setLeaveBlockedReason(data.leaveBlockedReason || "");
         }
       } else {
-        const data = await res.json();
-        alert(data.error || `Failed to ${action} member`);
+        await res.json();
+        alert("Could not update member role. Please try again.");
       }
     } catch (err) {
       console.error(`Error ${action}ing member:`, err);
@@ -1697,11 +1696,11 @@ function ThreadView({
       } else {
         const errorData = await res.json().catch(() => ({}));
         console.error("Failed to add member:", errorData);
-        alert("Failed to add member. " + (errorData.error || ""));
+        alert("Could not add member. Please try again.");
       }
     } catch (err) {
       console.error("Error adding member:", err);
-      alert("Failed to add member. Please try again.");
+      alert("Could not add member. Please try again.");
     } finally {
       setIsAddingMember(null);
     }
@@ -1729,11 +1728,11 @@ function ThreadView({
       } else {
         const errorData = await res.json().catch(() => ({}));
         console.error("Failed to update group name:", res.status, errorData);
-        alert("Failed to save group name. Please try again.");
+        alert("Could not save group name. Please try again.");
       }
     } catch (err) {
       console.error("Error saving group name:", err);
-      alert("Failed to save group name. Please try again.");
+      alert("Could not save group name. Please try again.");
     } finally {
       setIsSavingGroup(false);
     }
@@ -1792,11 +1791,11 @@ function ThreadView({
       } else {
         const errorData = await updateRes.json().catch(() => ({}));
         console.error("Failed to update group avatar:", updateRes.status, errorData);
-        alert("Failed to save group image. Please try again.");
+        alert("Could not save group image. Please try again.");
       }
     } catch (err) {
       console.error("Error uploading group avatar:", err);
-      alert("Failed to upload image. Please try again.");
+      alert("Could not upload image. Please try again.");
     } finally {
       setIsUploadingGroupAvatar(false);
       // Reset the input
