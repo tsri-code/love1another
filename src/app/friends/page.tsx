@@ -89,6 +89,17 @@ export default function FriendsPage() {
     new Set()
   );
 
+  // Track which profile each friend is connected to (for already-connected modal)
+  const [friendProfileMap, setFriendProfileMap] = useState<
+    Map<string, { id: string; name: string }>
+  >(new Map());
+
+  // State for showing "already connected" modal
+  const [connectedFriendInfo, setConnectedFriendInfo] = useState<{
+    friend: User;
+    profile: { id: string; name: string };
+  } | null>(null);
+
   // Track friends that were just accepted (for extra notification)
   const [justAcceptedFriendIds, setJustAcceptedFriendIds] = useState<
     Set<string>
@@ -186,8 +197,13 @@ export default function FriendsPage() {
             const profilesData = await profilesRes.json();
             const allProfiles = profilesData.people || [];
 
-            // For each profile, get connections
+            // For each profile, get connections and track which profile each user is connected to
             const connectedUserIds = new Set<string>();
+            const userToProfileMap = new Map<
+              string,
+              { id: string; name: string }
+            >();
+
             for (const profile of allProfiles) {
               const connRes = await fetch(
                 `/api/connections?profileId=${profile.id}`
@@ -196,18 +212,32 @@ export default function FriendsPage() {
                 const connData = await connRes.json();
                 for (const conn of connData.connections || []) {
                   connectedUserIds.add(conn.connectedUserId);
+                  // Map this user to the profile they're connected to
+                  userToProfileMap.set(conn.connectedUserId, {
+                    id: profile.id,
+                    name: profile.displayName,
+                  });
                 }
               }
             }
 
             // Find friends that are NOT connected to any profile
             const unlinked = new Set<string>();
+            const profileMap = new Map<string, { id: string; name: string }>();
+
             for (const friend of newFriends) {
               if (!connectedUserIds.has(friend.id)) {
                 unlinked.add(friend.id);
+              } else {
+                // Friend is connected - store which profile they're connected to
+                const profileInfo = userToProfileMap.get(friend.id);
+                if (profileInfo) {
+                  profileMap.set(friend.id, profileInfo);
+                }
               }
             }
             setUnlinkedFriendIds(unlinked);
+            setFriendProfileMap(profileMap);
           }
         } catch (err) {
           console.error("Error checking profile connections:", err);
@@ -691,14 +721,28 @@ export default function FriendsPage() {
                           data-tooltip={
                             unlinkedFriendIds.has(friend.id)
                               ? "Link to a profile"
-                              : "Linked to profile"
+                              : "View linked profile"
                           }
                         >
                           <button
                             onClick={() => {
                               if (friend.user) {
-                                setProfileActionUser(friend.user);
-                                fetchProfiles();
+                                if (unlinkedFriendIds.has(friend.id)) {
+                                  // Not connected - show create/connect modal
+                                  setProfileActionUser(friend.user);
+                                  fetchProfiles();
+                                } else {
+                                  // Already connected - show info modal
+                                  const profileInfo = friendProfileMap.get(
+                                    friend.id
+                                  );
+                                  if (profileInfo) {
+                                    setConnectedFriendInfo({
+                                      friend: friend.user,
+                                      profile: profileInfo,
+                                    });
+                                  }
+                                }
                               }
                             }}
                             className={`p-2 rounded-full transition-colors relative ${
@@ -1562,6 +1606,83 @@ export default function FriendsPage() {
                   Remove
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Already Connected Modal */}
+      {connectedFriendInfo && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ backgroundColor: "rgba(0, 0, 0, 0.5)" }}
+          onClick={() => setConnectedFriendInfo(null)}
+        >
+          <div
+            className="bg-[var(--surface-primary)] rounded-[var(--card-radius)] shadow-xl w-full max-w-md mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-center" style={{ padding: "var(--space-lg)" }}>
+              <div
+                className="rounded-full flex items-center justify-center text-white font-medium mx-auto overflow-hidden"
+                style={{
+                  width: "64px",
+                  height: "64px",
+                  fontSize: "24px",
+                  backgroundColor: connectedFriendInfo.friend.avatarPath
+                    ? "transparent"
+                    : connectedFriendInfo.friend.avatarColor || "#6b8cae",
+                  marginBottom: "var(--space-md)",
+                }}
+              >
+                {connectedFriendInfo.friend.avatarPath ? (
+                  <img
+                    src={connectedFriendInfo.friend.avatarPath}
+                    alt={connectedFriendInfo.friend.fullName}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  connectedFriendInfo.friend.avatarInitials ||
+                  getInitials(connectedFriendInfo.friend.fullName)
+                )}
+              </div>
+              <h3 className="font-serif font-semibold text-[var(--text-primary)] text-lg">
+                Already Connected!
+              </h3>
+              <p
+                className="text-[var(--text-muted)]"
+                style={{ marginTop: "var(--space-xs)" }}
+              >
+                {connectedFriendInfo.friend.fullName} is linked to the profile{" "}
+                <strong className="text-[var(--text-primary)]">
+                  {connectedFriendInfo.profile.name}
+                </strong>
+              </p>
+            </div>
+
+            <div
+              className="flex flex-col border-t border-[var(--border-primary)]"
+              style={{ padding: "var(--space-md)", gap: "var(--space-sm)" }}
+            >
+              <button
+                onClick={() => {
+                  setConnectedFriendInfo(null);
+                  window.location.href = `/p/${connectedFriendInfo.profile.id}/prayers`;
+                }}
+                className="btn btn-primary btn-full"
+              >
+                View Profile
+              </button>
+              <button
+                onClick={() => setConnectedFriendInfo(null)}
+                className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                style={{
+                  padding: "var(--space-sm)",
+                  fontSize: "var(--text-sm)",
+                }}
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
