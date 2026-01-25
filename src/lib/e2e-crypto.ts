@@ -690,60 +690,6 @@ export async function decryptPrayers(
 }
 
 /**
- * Encrypt prayers using the cached prayer key (no password needed)
- * Call this after unlockUserKeys has been called
- *
- * @param prayers - Prayer data object
- * @param userId - User ID to look up cached key
- * @returns Encrypted data with IV
- */
-export async function encryptPrayersWithCachedKey(
-  prayers: object,
-  userId: string
-): Promise<{ encrypted: string; iv: string }> {
-  const prayerKey = await getStoredPrayerKey(userId);
-  if (!prayerKey) {
-    throw new Error("Prayer key not available. Please log in again.");
-  }
-
-  const plaintext = JSON.stringify(prayers);
-  const encrypted = await encryptWithAES(plaintext, prayerKey);
-
-  return {
-    encrypted: encrypted.ciphertext,
-    iv: encrypted.iv,
-  };
-}
-
-/**
- * Decrypt prayers using the cached prayer key (no password needed)
- * Call this after unlockUserKeys has been called
- *
- * @param encryptedBase64 - Encrypted prayer data
- * @param ivBase64 - Initialization vector
- * @param userId - User ID to look up cached key
- * @returns Decrypted prayer data
- */
-export async function decryptPrayersWithCachedKey(
-  encryptedBase64: string,
-  ivBase64: string,
-  userId: string
-): Promise<object> {
-  const prayerKey = await getStoredPrayerKey(userId);
-  if (!prayerKey) {
-    throw new Error("Prayer key not available. Please log in again.");
-  }
-
-  const encrypted: EncryptedData = {
-    ciphertext: encryptedBase64,
-    iv: ivBase64,
-  };
-
-  const plaintext = await decryptWithAES(encrypted, prayerKey);
-  return JSON.parse(plaintext);
-}
-
-/**
  * Check if the user's encryption keys are unlocked (available in IndexedDB)
  */
 export async function isUserUnlocked(userId: string): Promise<boolean> {
@@ -875,51 +821,6 @@ export async function decryptWithDEK(
 }
 
 /**
- * Encrypt prayers using DEK (e2ee_v2 scheme)
- * No salt needed since we use the same DEK
- *
- * @param prayers - Prayer data object
- * @param userId - User ID to look up DEK
- * @returns Encrypted data with IV and version
- */
-export async function encryptPrayersWithDEK(
-  prayers: object,
-  userId: string
-): Promise<{ encrypted: string; iv: string; version: "e2ee_v2" }> {
-  const plaintext = JSON.stringify(prayers);
-  const encrypted = await encryptWithDEK(plaintext, userId);
-
-  return {
-    encrypted: encrypted.ciphertext,
-    iv: encrypted.iv,
-    version: "e2ee_v2",
-  };
-}
-
-/**
- * Decrypt prayers using DEK (e2ee_v2 scheme)
- *
- * @param encryptedBase64 - Encrypted prayer data
- * @param ivBase64 - Initialization vector
- * @param userId - User ID to look up DEK
- * @returns Decrypted prayer data
- */
-export async function decryptPrayersWithDEK(
-  encryptedBase64: string,
-  ivBase64: string,
-  userId: string
-): Promise<object> {
-  const encrypted: EncryptedData = {
-    ciphertext: encryptedBase64,
-    iv: ivBase64,
-    version: "e2ee_v2",
-  };
-
-  const plaintext = await decryptWithDEK(encrypted, userId);
-  return JSON.parse(plaintext);
-}
-
-/**
  * Encrypt prayers, preferring DEK (e2ee_v2) when available, falling back to legacy
  *
  * @param prayers - Prayer data to encrypt
@@ -1034,32 +935,4 @@ export async function decryptPrayersAuto(
   }
 
   throw new Error("No decryption keys available. Please log in again.");
-}
-
-/**
- * Check if user has DEK-based encryption set up
- */
-export async function hasDEKSetup(userId: string): Promise<boolean> {
-  const dek = await getStoredDEK(userId);
-  return dek !== null;
-}
-
-/**
- * Generate keys for a new user with envelope encryption (e2ee_v2)
- * This is the new signup flow that uses DEK
- */
-export async function generateUserKeysV2(password: string): Promise<{
-  legacy: UserKeyPair;
-  dek: Uint8Array;
-}> {
-  // Generate legacy keys for backward compatibility with conversation encryption
-  const legacyKeys = await generateUserKeys(password);
-
-  // Generate DEK for content encryption
-  const dek = crypto.getRandomValues(new Uint8Array(32));
-
-  return {
-    legacy: legacyKeys,
-    dek,
-  };
 }

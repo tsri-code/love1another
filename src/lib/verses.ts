@@ -194,27 +194,3 @@ export function getVerseById(id: number): Verse | undefined {
   return PRAYER_VERSES.find(v => v.id === id);
 }
 
-/**
- * Get a random verse
- */
-export function getRandomVerse(): Verse {
-  const index = Math.floor(Math.random() * PRAYER_VERSES.length);
-  return PRAYER_VERSES[index];
-}
-
-/**
- * Get the next unused verse ID, or a random one if all are used
- */
-export function getNextVerseId(usedIds: number[]): number {
-  const allIds = PRAYER_VERSES.map(v => v.id);
-  const availableIds = allIds.filter(id => !usedIds.includes(id));
-  
-  if (availableIds.length === 0) {
-    // All verses used, return a random one
-    return allIds[Math.floor(Math.random() * allIds.length)];
-  }
-  
-  // Return the first available ID
-  return availableIds[0];
-}
-

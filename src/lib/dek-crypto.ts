@@ -142,14 +142,6 @@ export async function importDEK(dekBytes: Uint8Array): Promise<CryptoKey> {
   );
 }
 
-/**
- * Export a CryptoKey DEK to raw bytes
- */
-export async function exportDEK(dek: CryptoKey): Promise<Uint8Array> {
-  const raw = await crypto.subtle.exportKey("raw", dek);
-  return new Uint8Array(raw);
-}
-
 // ============================================================================
 // Recovery Code Generation
 // ============================================================================
@@ -168,16 +160,6 @@ export function generateRecoveryCode(): string {
   }
 
   return words.join(" ");
-}
-
-/**
- * Validate that a recovery code has the correct format
- */
-export function validateRecoveryCode(code: string): boolean {
-  const words = code.trim().toLowerCase().split(/\s+/);
-  if (words.length !== 6) return false;
-
-  return words.every((word) => WORDLIST.includes(word));
 }
 
 /**
@@ -570,12 +552,4 @@ export async function clearStoredDEK(): Promise<void> {
   } catch {
     // Ignore errors during cleanup
   }
-}
-
-/**
- * Check if DEK is stored in session
- */
-export async function isDEKStoredInSession(userId: string): Promise<boolean> {
-  const dek = await getStoredDEK(userId);
-  return dek !== null;
 }
