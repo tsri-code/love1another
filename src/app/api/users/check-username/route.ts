@@ -54,10 +54,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Reserved usernames that can't be used
+    // Note: "support" was removed to allow the official support account
     const reservedUsernames = [
       "admin",
       "administrator",
-      "support",
       "help",
       "system",
       "love1another",
