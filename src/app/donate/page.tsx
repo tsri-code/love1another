@@ -1,9 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useAuth } from "@/components/AuthGuard";
-import { Navbar } from "@/components/Navbar";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/components/AuthGuard";
 
 const DONATION_AMOUNTS = [5, 10, 25, 50, 100];
 
@@ -64,7 +63,46 @@ export default function DonatePage() {
       className="min-h-screen flex flex-col page"
       style={{ background: "var(--bg-primary)" }}
     >
-      {user && <Navbar />}
+      {/* Header with back button */}
+      <header
+        className="sticky top-0 z-40 bg-[var(--bg-primary)] border-b border-[var(--border-light)]"
+        style={{
+          backdropFilter: "blur(8px)",
+          WebkitBackdropFilter: "blur(8px)",
+        }}
+      >
+        <div
+          className="container flex items-center"
+          style={{ height: "56px", maxWidth: "600px", margin: "0 auto" }}
+        >
+          <button
+            onClick={() => router.push("/")}
+            className="icon-btn"
+            style={{ marginLeft: "calc(-1 * var(--space-sm))" }}
+            aria-label="Go back"
+          >
+            <svg
+              style={{ width: "20px", height: "20px" }}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 19l-7-7 7-7"
+              />
+            </svg>
+          </button>
+          <h1
+            className="font-serif font-semibold text-[var(--text-primary)]"
+            style={{ fontSize: "var(--text-lg)", marginLeft: "var(--space-sm)" }}
+          >
+            Donate
+          </h1>
+        </div>
+      </header>
 
       <main className="flex-1">
         <div
@@ -75,36 +113,6 @@ export default function DonatePage() {
             padding: "var(--space-xl) var(--container-padding)",
           }}
         >
-          {/* Back button for non-logged-in users */}
-          {!user && (
-            <button
-              onClick={() => router.push("/")}
-              className="donate-back-btn flex items-center text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-              style={{
-                marginBottom: "var(--space-lg)",
-                gap: "var(--space-xs)",
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                minHeight: "var(--touch-target-min)",
-              }}
-            >
-              <svg
-                style={{ width: "20px", height: "20px" }}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15 19l-7-7 7-7"
-                />
-              </svg>
-              Back to Home
-            </button>
-          )}
 
           {/* Header */}
           <div
