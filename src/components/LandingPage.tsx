@@ -399,12 +399,28 @@ export function LandingPage() {
             Built with love for the Body of Christ.
           </p>
 
-          <p
-            className="text-[var(--text-muted)]"
-            style={{ fontSize: "var(--text-sm)" }}
+          <div
+            style={{
+              marginTop: "var(--space-lg)",
+              padding: "var(--space-md) var(--space-lg)",
+              backgroundColor: "var(--surface-secondary)",
+              borderRadius: "var(--card-radius)",
+              border: "1px solid var(--border-light)",
+            }}
           >
-            Questions? Create a free account and message <strong>@support</strong> directly in the app.
-          </p>
+            <p
+              className="text-[var(--text-primary)]"
+              style={{
+                fontSize: "var(--text-base)",
+                fontWeight: 500,
+                textAlign: "center",
+              }}
+            >
+              Questions? Create a free account and message{" "}
+              <strong style={{ color: "var(--accent-primary)" }}>@support</strong>{" "}
+              directly in the app.
+            </p>
+          </div>
         </div>
       </section>
 

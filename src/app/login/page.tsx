@@ -316,9 +316,10 @@ export default function LoginPage() {
           try {
             const dekUnlockSuccess = await unlockWithDEK(e2eeKeysData, password, data.user.id);
             if (dekUnlockSuccess) {
-              // Successfully unlocked with DEK - redirect to home
-              router.push("/");
-              router.refresh();
+              // Successfully unlocked with DEK - show redirect overlay and navigate
+              setIsRedirecting(true);
+              await new Promise(resolve => setTimeout(resolve, 300));
+              window.location.href = "/";
               return;
             }
           } catch (dekError) {
@@ -338,9 +339,10 @@ export default function LoginPage() {
             // No recovery code set up - data is lost, continue to app
             console.warn("DEK unlock failed and no recovery code available");
             setError("Your data could not be restored. Please set up a recovery code in Settings.");
-            // Still redirect - user can set up new encryption
-            router.push("/");
-            router.refresh();
+            // Still redirect - show overlay and navigate
+            setIsRedirecting(true);
+            await new Promise(resolve => setTimeout(resolve, 300));
+            window.location.href = "/";
             return;
           }
         }
@@ -380,9 +382,10 @@ export default function LoginPage() {
           // Continue to app - they'll be prompted in Settings
         }
 
-        // Redirect to home
-        router.push("/");
-        router.refresh();
+        // Show redirect overlay and navigate to home
+        setIsRedirecting(true);
+        await new Promise(resolve => setTimeout(resolve, 300));
+        window.location.href = "/";
       }
     } catch (err) {
       console.error("Login error:", err);
@@ -1088,7 +1091,7 @@ export default function LoginPage() {
             Welcome!
           </h2>
           <p className="text-[var(--text-secondary)]" style={{ fontSize: "var(--text-sm)" }}>
-            Email verified. Logging you in...
+            Signing you in...
           </p>
         </div>
       </div>
