@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useAuth } from "@/components/AuthGuard";
 import { useAlertBanner } from "@/components/ui/alert-banner";
 import { useCrypto } from "@/lib/use-crypto";
+import { createClient } from "@/lib/supabase";
 
 interface Profile {
   id: string;
@@ -1851,72 +1852,118 @@ function ThreadView({
   const [isLoadingProfiles, setIsLoadingProfiles] = useState(false);
 
   // Fetch messages for this conversation
-  useEffect(() => {
-    const fetchMessages = async () => {
-      if (!thread.id || thread.id.startsWith("thread-new-")) {
-        // New conversation, no messages yet
+  const fetchMessages = useCallback(async (showLoading = true) => {
+    if (!thread.id || thread.id.startsWith("thread-new-")) {
+      // New conversation, no messages yet
+      setMessages([]);
+      setIsLoadingMessages(false);
+      return;
+    }
+
+    if (showLoading) {
+      setIsLoadingMessages(true);
+    }
+    try {
+      // For group chats, include sender info to handle removed members
+      const includesSender = thread.type === "group";
+      const url = `/api/messages/${thread.id}?limit=50${includesSender ? "&includeSender=true" : ""}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        console.error("Failed to fetch messages:", res.status, errorData);
         setMessages([]);
-        setIsLoadingMessages(false);
         return;
       }
 
-      setIsLoadingMessages(true);
-      try {
-        // For group chats, include sender info to handle removed members
-        const includesSender = thread.type === "group";
-        const url = `/api/messages/${thread.id}?limit=50${includesSender ? "&includeSender=true" : ""}`;
-        const res = await fetch(url);
-        if (!res.ok) {
-          const errorData = await res.json().catch(() => ({}));
-          console.error("Failed to fetch messages:", res.status, errorData);
-          setMessages([]);
-          return;
-        }
+      const data = await res.json();
+      const apiMessages = (data.messages || []).map(
+        (msg: {
+          id: string;
+          senderId: string;
+          encryptedContent: string;
+          type: string;
+          createdAt: string;
+          isRead: boolean;
+          sender?: {
+            fullName: string;
+            username: string | null;
+            avatarInitials: string | null;
+            avatarColor: string;
+            avatarPath: string | null;
+          };
+        }) => ({
+          id: msg.id,
+          senderId: msg.senderId,
+          senderName:
+            msg.senderId === currentUserId
+              ? "You"
+              : msg.sender?.fullName || thread.participantName,
+          senderAvatar: msg.sender?.avatarPath || undefined,
+          senderColor: msg.sender?.avatarColor || undefined,
+          senderInitials: msg.sender?.avatarInitials || undefined,
+          content: msg.encryptedContent || "[Encrypted message]", // Would decrypt in production
+          type: msg.type || "message",
+          timestamp: msg.createdAt,
+          isRead: msg.isRead,
+        })
+      );
 
-        const data = await res.json();
-        const apiMessages = (data.messages || []).map(
-          (msg: {
-            id: string;
-            senderId: string;
-            encryptedContent: string;
-            type: string;
-            createdAt: string;
-            isRead: boolean;
-            sender?: {
-              fullName: string;
-              username: string | null;
-              avatarInitials: string | null;
-              avatarColor: string;
-              avatarPath: string | null;
-            };
-          }) => ({
-            id: msg.id,
-            senderId: msg.senderId,
-            senderName:
-              msg.senderId === currentUserId
-                ? "You"
-                : msg.sender?.fullName || thread.participantName,
-            senderAvatar: msg.sender?.avatarPath || undefined,
-            senderColor: msg.sender?.avatarColor || undefined,
-            senderInitials: msg.sender?.avatarInitials || undefined,
-            content: msg.encryptedContent || "[Encrypted message]", // Would decrypt in production
-            type: msg.type || "message",
-            timestamp: msg.createdAt,
-            isRead: msg.isRead,
-          })
-        );
-
-        setMessages(apiMessages);
-      } catch (error) {
-        console.error("Error fetching messages:", error);
-        setMessages([]);
-      } finally {
-        setIsLoadingMessages(false);
-      }
-    };
-
-    fetchMessages();
+      setMessages(apiMessages);
+    } catch (error) {
+      console.error("Error fetching messages:", error);
+      setMessages([]);
+    } finally {
+      setIsLoadingMessages(false);
+    }
   }, [thread.id, thread.participantName, thread.type, currentUserId]);
+
+  // Initial fetch and subscribe to realtime updates for this conversation
+  useEffect(() => {
+    fetchMessages();
+
+    // Skip subscriptions for new conversations
+    if (!thread.id || thread.id.startsWith("thread-new-")) {
+      return;
+    }
+
+    // Subscribe directly to messages table for this conversation
+    // Note: This requires messages table to be in supabase_realtime publication
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`messages:${thread.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `conversation_id=eq.${thread.id}`,
+        },
+        () => {
+          // New message arrived - refresh the messages list
+          fetchMessages(false);
+        }
+      )
+      .subscribe();
+
+    // Also listen for the global refresh event (from notification system)
+    const handleRealtimeRefresh = () => {
+      fetchMessages(false);
+    };
+    window.addEventListener("refreshConversations", handleRealtimeRefresh);
+
+    // Poll every 5 seconds as a reliable fallback
+    // This ensures messages appear even if realtime isn't configured
+    const pollInterval = setInterval(() => {
+      fetchMessages(false);
+    }, 5000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      window.removeEventListener("refreshConversations", handleRealtimeRefresh);
+      clearInterval(pollInterval);
+    };
+  }, [fetchMessages, thread.id]);
 
   // Fetch profiles when needed
   useEffect(() => {

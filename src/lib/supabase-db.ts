@@ -1357,6 +1357,122 @@ export async function getUserById(userId: string): Promise<{
 }
 
 // ============================================================================
+// Notification Functions
+// ============================================================================
+
+/**
+ * Create a message notification for the recipient(s)
+ * This is called after a message is sent to notify recipients in real-time
+ */
+export async function createMessageNotification(
+  conversationId: string,
+  senderId: string,
+  messageId: string,
+  messageType: string
+): Promise<void> {
+  const supabase = await createServerSupabaseClient();
+
+  try {
+    // Get conversation details
+    const { data: conversation, error: convError } = await supabase
+      .from("conversations")
+      .select("*")
+      .eq("id", conversationId)
+      .single();
+
+    if (convError || !conversation) {
+      console.error("Error fetching conversation for notification:", convError);
+      return;
+    }
+
+    // Get sender name
+    const { data: senderData } = await supabase
+      .from("users")
+      .select("full_name, username")
+      .eq("id", senderId)
+      .single();
+
+    const senderName = senderData?.full_name || senderData?.username || "Someone";
+    const isPrayer = messageType === "prayer_request";
+
+    if (conversation.type === "private") {
+      // Private conversation - notify the other user
+      const recipientId =
+        conversation.user1_id === senderId
+          ? conversation.user2_id
+          : conversation.user1_id;
+
+      if (recipientId) {
+        // Check if recipient has soft-deleted the conversation
+        const { data: deletion } = await supabase
+          .from("conversation_deletions")
+          .select("id")
+          .eq("conversation_id", conversationId)
+          .eq("user_id", recipientId)
+          .maybeSingle();
+
+        if (!deletion) {
+          await supabase.from("notification_events").insert({
+            user_id: recipientId,
+            type: "message",
+            title: senderName,
+            body: isPrayer ? "Sent a prayer request" : "New message",
+            payload: {
+              conversation_id: conversationId,
+              message_id: messageId,
+              sender_id: senderId,
+              is_prayer_request: isPrayer,
+            },
+          });
+        }
+      }
+    } else if (conversation.type === "group") {
+      // Group conversation - notify all members except sender
+      const { data: members } = await supabase
+        .from("conversation_members")
+        .select("user_id")
+        .eq("conversation_id", conversationId)
+        .neq("user_id", senderId);
+
+      if (members && members.length > 0) {
+        // Get users who haven't soft-deleted the conversation
+        const { data: deletions } = await supabase
+          .from("conversation_deletions")
+          .select("user_id")
+          .eq("conversation_id", conversationId);
+
+        const deletedUserIds = new Set(
+          (deletions || []).map((d) => d.user_id)
+        );
+
+        const notifications = members
+          .filter((m) => !deletedUserIds.has(m.user_id))
+          .map((member) => ({
+            user_id: member.user_id,
+            type: "message" as const,
+            title: `${conversation.group_name || "Group"}: ${senderName}`,
+            body: isPrayer ? "Sent a prayer request" : "New message",
+            payload: {
+              conversation_id: conversationId,
+              message_id: messageId,
+              sender_id: senderId,
+              group_name: conversation.group_name,
+              is_prayer_request: isPrayer,
+            },
+          }));
+
+        if (notifications.length > 0) {
+          await supabase.from("notification_events").insert(notifications);
+        }
+      }
+    }
+  } catch (error) {
+    // Log but don't fail - notifications should never break messaging
+    console.error("Error creating message notification:", error);
+  }
+}
+
+// ============================================================================
 // Utility Functions
 // ============================================================================
 

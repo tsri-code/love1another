@@ -6,6 +6,7 @@ import {
   sendMessage,
   markMessagesAsRead,
   deleteConversation,
+  createMessageNotification,
 } from "@/lib/supabase-db";
 import {
   checkRateLimit,
@@ -131,6 +132,11 @@ export async function POST(
       iv,
       message_type: type,
     });
+
+    // Create notification for recipient(s) - don't await, let it happen async
+    createMessageNotification(conversationId, user.id, message.id, type).catch(
+      (err) => console.error("Failed to create message notification:", err)
+    );
 
     return NextResponse.json(
       {
