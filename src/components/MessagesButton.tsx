@@ -150,6 +150,44 @@ export function MessagesButton({
     }
   }, [externalOpen, isOpen, onExternalOpenHandled]);
 
+  // Handle opening messages to a specific username (from Contact page)
+  useEffect(() => {
+    const targetUsername = sessionStorage.getItem("openMessageToUsername");
+    if (targetUsername && user?.id) {
+      sessionStorage.removeItem("openMessageToUsername");
+
+      // Open the panel and search for the user
+      setIsOpen(true);
+      setShowSearchCompose(true);
+      setSearchQuery(targetUsername);
+
+      // Fetch the user and start conversation
+      const fetchAndStartConversation = async () => {
+        try {
+          const res = await fetch(`/api/users?q=${encodeURIComponent(targetUsername)}&exclude=${user.id}`);
+          if (res.ok) {
+            const data = await res.json();
+            const users = data.users || [];
+            // Find exact match by username
+            const targetUser = users.find((u: SearchUser) =>
+              u.username?.toLowerCase() === targetUsername.toLowerCase()
+            );
+            if (targetUser) {
+              // Small delay to let UI settle
+              setTimeout(() => {
+                handleStartConversation(targetUser);
+              }, 500);
+            }
+          }
+        } catch (err) {
+          console.error("Error finding user:", err);
+        }
+      };
+
+      fetchAndStartConversation();
+    }
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Report unread count changes
   useEffect(() => {
     onUnreadCountChange?.(totalUnread);

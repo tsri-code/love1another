@@ -1,50 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { AppHeader } from "@/components/AppHeader";
-import { useAuth } from "@/components/AuthGuard";
 
 export default function ContactPage() {
-  const { user } = useAuth();
   const [isRedirecting, setIsRedirecting] = useState(false);
 
-  // Look up the support user
-  const [supportUser, setSupportUser] = useState<{
-    id: string;
-    username: string;
-    fullName: string;
-  } | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const fetchSupportUser = async () => {
-      try {
-        const res = await fetch("/api/users/lookup-by-username?username=support");
-        if (res.ok) {
-          const data = await res.json();
-          setSupportUser(data.user);
-        } else {
-          setError("Support account not found");
-        }
-      } catch {
-        setError("Failed to load support info");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchSupportUser();
-  }, []);
-
-  const handleContactSupport = async () => {
-    if (!supportUser) return;
-
+  const handleContactSupport = () => {
     setIsRedirecting(true);
 
-    // Navigate to home and trigger messages with support
-    // We'll store a flag that the MessagesButton can read
-    sessionStorage.setItem("openMessageTo", supportUser.id);
+    // Navigate to home and trigger messages with @support username
+    // The MessagesButton will look up the user by username
+    sessionStorage.setItem("openMessageToUsername", "support");
     window.location.href = "/";
   };
 
@@ -52,6 +19,7 @@ export default function ContactPage() {
     <div className="page">
       <AppHeader
         title="Contact Us"
+        showBack={true}
         backHref="/"
       />
 
@@ -124,42 +92,32 @@ export default function ContactPage() {
               to reach us, and your message is end-to-end encrypted.
             </p>
 
-            {isLoading ? (
-              <div className="text-center text-[var(--text-muted)]" style={{ padding: "var(--space-md)" }}>
-                Loading...
-              </div>
-            ) : error ? (
-              <div className="text-center text-[var(--text-muted)]" style={{ padding: "var(--space-md)" }}>
-                {error}
-              </div>
-            ) : (
-              <button
-                onClick={handleContactSupport}
-                disabled={isRedirecting || !supportUser}
-                className="btn btn-primary w-full"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "var(--space-sm)",
-                }}
+            <button
+              onClick={handleContactSupport}
+              disabled={isRedirecting}
+              className="btn btn-primary w-full"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "var(--space-sm)",
+              }}
+            >
+              <svg
+                style={{ width: "20px", height: "20px" }}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
               >
-                <svg
-                  style={{ width: "20px", height: "20px" }}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-                  />
-                </svg>
-                {isRedirecting ? "Opening..." : "Message @support"}
-              </button>
-            )}
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                />
+              </svg>
+              {isRedirecting ? "Opening..." : "Message @support"}
+            </button>
           </div>
 
           {/* What to Include */}
