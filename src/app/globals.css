@@ -2122,3 +2122,389 @@ a:hover {
 .modal-check-icon-error {
   color: var(--error);
 }
+
+/* ============================================
+   DONATION PAGE - Mobile Optimization
+   ============================================ */
+
+/* Donation container */
+.donate-container {
+  padding-top: var(--space-xl);
+  padding-bottom: var(--space-2xl);
+}
+
+@media (max-width: 640px) {
+  .donate-container {
+    padding-top: var(--space-lg);
+    padding-bottom: var(--space-xl);
+  }
+}
+
+/* Donation header icon */
+.donate-icon {
+  width: 80px;
+  height: 80px;
+}
+
+.donate-icon-emoji {
+  font-size: 40px;
+}
+
+@media (max-width: 640px) {
+  .donate-icon {
+    width: 64px;
+    height: 64px;
+  }
+
+  .donate-icon-emoji {
+    font-size: 32px;
+  }
+}
+
+@media (max-width: 375px) {
+  .donate-icon {
+    width: 56px;
+    height: 56px;
+  }
+
+  .donate-icon-emoji {
+    font-size: 28px;
+  }
+}
+
+/* Donation header spacing */
+.donate-header {
+  margin-bottom: var(--space-2xl);
+}
+
+@media (max-width: 640px) {
+  .donate-header {
+    margin-bottom: var(--space-xl);
+  }
+}
+
+/* Donation message card */
+.donate-message-card {
+  padding: var(--space-xl);
+}
+
+@media (max-width: 640px) {
+  .donate-message-card {
+    padding: var(--space-lg);
+  }
+
+  .donate-message-text {
+    font-size: var(--text-sm) !important;
+  }
+
+  .donate-scripture {
+    font-size: var(--text-xs) !important;
+  }
+}
+
+@media (max-width: 375px) {
+  .donate-message-card {
+    padding: var(--space-md);
+  }
+}
+
+/* Donation amount selection card */
+.donate-amount-card {
+  padding: var(--space-xl);
+}
+
+@media (max-width: 640px) {
+  .donate-amount-card {
+    padding: var(--space-lg);
+  }
+}
+
+@media (max-width: 375px) {
+  .donate-amount-card {
+    padding: var(--space-md);
+  }
+}
+
+/* Donation amounts grid - responsive layout */
+.donate-amounts-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg);
+}
+
+@media (max-width: 640px) {
+  .donate-amounts-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-xs);
+  }
+}
+
+@media (max-width: 375px) {
+  .donate-amounts-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+}
+
+/* Donation amount buttons */
+.donate-amount-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 56px;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  font-family: var(--font-sans);
+  border-radius: var(--card-radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.donate-amount-btn:active {
+  transform: scale(0.96);
+}
+
+@media (max-width: 640px) {
+  .donate-amount-btn {
+    height: 52px;
+    font-size: var(--text-base);
+    border-radius: 10px;
+  }
+}
+
+@media (max-width: 375px) {
+  .donate-amount-btn {
+    height: 48px;
+    font-size: var(--text-sm);
+  }
+}
+
+/* Custom amount input */
+.donate-custom-input {
+  padding-left: 32px !important;
+  height: 56px !important;
+  font-size: var(--text-lg) !important;
+}
+
+.donate-currency-symbol {
+  font-size: var(--text-lg);
+}
+
+@media (max-width: 640px) {
+  .donate-custom-input {
+    height: 52px !important;
+    font-size: var(--text-base) !important;
+    padding-left: 28px !important;
+  }
+
+  .donate-currency-symbol {
+    font-size: var(--text-base);
+    left: 12px !important;
+  }
+}
+
+/* Donate submit button */
+.donate-submit-btn {
+  height: 56px;
+  font-size: var(--text-lg);
+}
+
+@media (max-width: 640px) {
+  .donate-submit-btn {
+    height: 52px;
+    font-size: var(--text-base);
+  }
+}
+
+/* Donation error message */
+.donate-error {
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--card-radius-sm);
+}
+
+@media (max-width: 640px) {
+  .donate-error {
+    font-size: var(--text-xs) !important;
+    padding: var(--space-xs) var(--space-sm);
+  }
+}
+
+/* Donation security note */
+.donate-security-note {
+  font-size: var(--text-xs);
+}
+
+@media (max-width: 640px) {
+  .donate-security-note {
+    font-size: 11px !important;
+  }
+}
+
+/* Donation footer note */
+.donate-footer-note {
+  font-size: var(--text-sm);
+  padding-bottom: var(--space-lg);
+}
+
+@media (max-width: 640px) {
+  .donate-footer-note {
+    font-size: var(--text-xs) !important;
+    padding-bottom: var(--space-md);
+  }
+}
+
+/* ============================================
+   DONATION SUCCESS PAGE - Mobile Optimization
+   ============================================ */
+
+.donate-success-main {
+  padding: var(--space-lg);
+}
+
+@media (max-width: 640px) {
+  .donate-success-main {
+    padding: var(--space-md);
+    align-items: flex-start;
+    padding-top: var(--space-2xl);
+  }
+}
+
+.donate-success-container {
+  padding: var(--space-xl) var(--container-padding);
+}
+
+@media (max-width: 640px) {
+  .donate-success-container {
+    padding: var(--space-lg) var(--space-md);
+  }
+}
+
+/* Success icon */
+.donate-success-icon {
+  width: 100px;
+  height: 100px;
+}
+
+.donate-success-checkmark {
+  width: 50px;
+  height: 50px;
+}
+
+@media (max-width: 640px) {
+  .donate-success-icon {
+    width: 80px;
+    height: 80px;
+  }
+
+  .donate-success-checkmark {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+@media (max-width: 375px) {
+  .donate-success-icon {
+    width: 72px;
+    height: 72px;
+  }
+
+  .donate-success-checkmark {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+/* Success message */
+.donate-success-message {
+  font-size: var(--text-lg);
+}
+
+@media (max-width: 640px) {
+  .donate-success-message {
+    font-size: var(--text-base) !important;
+  }
+}
+
+@media (max-width: 375px) {
+  .donate-success-message {
+    font-size: var(--text-sm) !important;
+  }
+}
+
+/* Receipt card */
+.donate-receipt-card {
+  padding: var(--space-lg);
+}
+
+@media (max-width: 640px) {
+  .donate-receipt-card {
+    padding: var(--space-md);
+  }
+
+  .donate-receipt-card p {
+    font-size: var(--text-sm);
+  }
+}
+
+/* Success scripture */
+.donate-success-scripture {
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 640px) {
+  .donate-success-scripture {
+    font-size: var(--text-xs) !important;
+  }
+}
+
+/* Success buttons */
+.donate-success-buttons {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  gap: var(--space-md);
+}
+
+.donate-success-btn {
+  min-width: 160px;
+  flex: 1;
+  max-width: 200px;
+}
+
+@media (max-width: 640px) {
+  .donate-success-buttons {
+    flex-direction: column;
+    gap: var(--space-sm);
+  }
+
+  .donate-success-btn {
+    width: 100%;
+    max-width: 100%;
+    min-width: auto;
+  }
+}
+
+/* Touch-friendly adjustments for donation buttons */
+@media (hover: none) and (pointer: coarse) {
+  .donate-amount-btn:hover {
+    transform: none;
+  }
+
+  .donate-amount-btn:active {
+    transform: scale(0.96);
+  }
+
+  .donate-submit-btn:hover {
+    transform: none;
+  }
+
+  .donate-submit-btn:active {
+    transform: scale(0.98);
+  }
+
+  .donate-back-btn {
+    min-height: var(--touch-target-min);
+  }
+}

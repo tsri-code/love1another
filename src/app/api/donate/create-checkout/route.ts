@@ -45,7 +45,7 @@ export async function POST(req: Request) {
       line_items: [
         {
           price_data: {
-            currency: "usd",
+            currency: "cad",
             product_data: {
               name: "Love1Another Donation",
               description: "Thank you for supporting Love1Another!",
@@ -62,16 +62,10 @@ export async function POST(req: Request) {
         // This ensures the receipt shows "Love1Another"
         statement_descriptor: "LOVE1ANOTHER",
         statement_descriptor_suffix: "DONATION",
+        // Send email receipt to the donor
+        receipt_email: email || undefined,
         metadata: {
           source: "love1another_donation",
-        },
-      },
-      // Request email receipt
-      invoice_creation: {
-        enabled: true,
-        invoice_data: {
-          description: "Thank you for your generous donation to Love1Another!",
-          footer: "Love1Another - Helping Christians pray for one another.",
         },
       },
     });
@@ -79,7 +73,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ url: session.url });
   } catch (error: unknown) {
     console.error("Stripe checkout error:", error);
-    
+
     if (error instanceof Error) {
       return NextResponse.json(
         { error: error.message },

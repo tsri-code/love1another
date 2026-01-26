@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthGuard";
 import { Navbar } from "@/components/Navbar";
 
-export default function DonateSuccessPage() {
+function DonateSuccessContent() {
   const { user } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -26,14 +26,14 @@ export default function DonateSuccessPage() {
 
   return (
     <div
-      className="min-h-screen flex flex-col"
+      className="min-h-screen flex flex-col page"
       style={{ background: "var(--bg-primary)" }}
     >
       {user && <Navbar />}
 
-      <main className="flex-1 flex items-center justify-center">
+      <main className="flex-1 flex items-center justify-center donate-success-main">
         <div
-          className="container text-center"
+          className="container text-center donate-success-container"
           style={{
             maxWidth: "500px",
             margin: "0 auto",
@@ -62,7 +62,7 @@ export default function DonateSuccessPage() {
                 style={{ marginBottom: "var(--space-xl)" }}
               >
                 <div
-                  className="rounded-full flex items-center justify-center"
+                  className="donate-success-icon rounded-full flex items-center justify-center"
                   style={{
                     width: "100px",
                     height: "100px",
@@ -70,6 +70,7 @@ export default function DonateSuccessPage() {
                   }}
                 >
                   <svg
+                    className="donate-success-checkmark"
                     style={{
                       width: "50px",
                       height: "50px",
@@ -101,7 +102,7 @@ export default function DonateSuccessPage() {
               </h1>
 
               <p
-                className="text-[var(--text-secondary)]"
+                className="text-[var(--text-secondary)] donate-success-message"
                 style={{
                   fontSize: "var(--text-lg)",
                   marginBottom: "var(--space-lg)",
@@ -126,15 +127,14 @@ export default function DonateSuccessPage() {
 
               {/* Email Receipt Notice */}
               <div
-                className="card"
+                className="card donate-receipt-card"
                 style={{
-                  padding: "var(--space-lg)",
                   marginBottom: "var(--space-xl)",
                 }}
               >
-                <div className="flex items-center justify-center" style={{ gap: "var(--space-sm)" }}>
+                <div className="flex items-center justify-center flex-wrap" style={{ gap: "var(--space-sm)" }}>
                   <span style={{ fontSize: "24px" }}>📧</span>
-                  <p className="text-[var(--text-secondary)]">
+                  <p className="text-[var(--text-secondary)]" style={{ margin: 0 }}>
                     A receipt has been sent to your email.
                   </p>
                 </div>
@@ -142,7 +142,7 @@ export default function DonateSuccessPage() {
 
               {/* Scripture */}
               <div
-                className="text-[var(--text-muted)] italic"
+                className="text-[var(--text-muted)] italic donate-success-scripture"
                 style={{
                   fontSize: "var(--text-sm)",
                   marginBottom: "var(--space-xl)",
@@ -157,21 +157,16 @@ export default function DonateSuccessPage() {
               </div>
 
               {/* Action Buttons */}
-              <div
-                className="flex flex-col sm:flex-row justify-center"
-                style={{ gap: "var(--space-md)" }}
-              >
+              <div className="donate-success-buttons">
                 <button
                   onClick={() => router.push("/")}
-                  className="btn btn-primary"
-                  style={{ minWidth: "160px" }}
+                  className="btn btn-primary donate-success-btn"
                 >
                   Go to Home
                 </button>
                 <button
                   onClick={() => router.push("/donate")}
-                  className="btn btn-secondary"
-                  style={{ minWidth: "160px" }}
+                  className="btn btn-secondary donate-success-btn"
                 >
                   Donate Again
                 </button>
@@ -181,5 +176,25 @@ export default function DonateSuccessPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function DonateSuccessPage() {
+  return (
+    <Suspense
+      fallback={
+        <div
+          className="min-h-screen flex flex-col items-center justify-center"
+          style={{ background: "var(--bg-primary)" }}
+        >
+          <div
+            className="animate-spin rounded-full border-4 border-[var(--accent-primary)] border-t-transparent"
+            style={{ width: "48px", height: "48px" }}
+          />
+        </div>
+      }
+    >
+      <DonateSuccessContent />
+    </Suspense>
   );
 }

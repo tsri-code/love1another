@@ -31,8 +31,48 @@ export default function HomePage() {
   const router = useRouter();
   const hasCreatedDefaultProfile = useRef(false);
 
+  // Show loading screen while auth is checking
+  // This prevents flash of landing page during sign-in
+  if (authLoading) {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ background: "var(--bg-primary)" }}
+      >
+        <div className="text-center animate-fade-in">
+          <div
+            style={{
+              width: "64px",
+              height: "64px",
+              margin: "0 auto var(--space-md)",
+              borderRadius: "16px",
+              overflow: "hidden",
+              boxShadow: "var(--shadow-md)",
+            }}
+          >
+            <img
+              src="/favicon.jpeg"
+              alt="Love1Another"
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
+          </div>
+          <div
+            className="animate-pulse"
+            style={{
+              width: "100px",
+              height: "8px",
+              margin: "0 auto",
+              borderRadius: "4px",
+              background: "var(--border-light)",
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
   // Show landing page for non-authenticated users
-  if (!authLoading && !user) {
+  if (!user) {
     return <LandingPage />;
   }
 
@@ -116,9 +156,9 @@ export default function HomePage() {
 
   return (
     <div className="page">
-      <Navbar 
-        onOpenMessages={handleOpenMessages} 
-        unreadMessageCount={unreadMessageCount} 
+      <Navbar
+        onOpenMessages={handleOpenMessages}
+        unreadMessageCount={unreadMessageCount}
       />
 
       <main className="flex-1">
@@ -412,8 +452,8 @@ export default function HomePage() {
       </main>
 
       {/* Messages Floating Button */}
-      <MessagesButton 
-        onPrayerAdded={fetchPeople} 
+      <MessagesButton
+        onPrayerAdded={fetchPeople}
         externalOpen={openMessages}
         onExternalOpenHandled={handleMessagesOpened}
         onUnreadCountChange={handleUnreadCountChange}

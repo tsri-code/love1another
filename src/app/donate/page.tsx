@@ -61,14 +61,14 @@ export default function DonatePage() {
 
   return (
     <div
-      className="min-h-screen flex flex-col"
+      className="min-h-screen flex flex-col page"
       style={{ background: "var(--bg-primary)" }}
     >
       {user && <Navbar />}
 
       <main className="flex-1">
         <div
-          className="container"
+          className="container donate-container"
           style={{
             maxWidth: "600px",
             margin: "0 auto",
@@ -79,13 +79,14 @@ export default function DonatePage() {
           {!user && (
             <button
               onClick={() => router.push("/")}
-              className="flex items-center text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+              className="donate-back-btn flex items-center text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
               style={{
                 marginBottom: "var(--space-lg)",
                 gap: "var(--space-xs)",
                 background: "none",
                 border: "none",
                 cursor: "pointer",
+                minHeight: "var(--touch-target-min)",
               }}
             >
               <svg
@@ -107,7 +108,7 @@ export default function DonatePage() {
 
           {/* Header */}
           <div
-            className="text-center"
+            className="text-center donate-header"
             style={{ marginBottom: "var(--space-2xl)" }}
           >
             <div
@@ -115,14 +116,14 @@ export default function DonatePage() {
               style={{ marginBottom: "var(--space-lg)" }}
             >
               <div
-                className="rounded-full flex items-center justify-center"
+                className="donate-icon rounded-full flex items-center justify-center"
                 style={{
                   width: "80px",
                   height: "80px",
                   background: "var(--accent-primary-light)",
                 }}
               >
-                <span style={{ fontSize: "40px" }}>💝</span>
+                <span className="donate-icon-emoji" style={{ fontSize: "40px" }}>💝</span>
               </div>
             </div>
             <h1
@@ -144,14 +145,13 @@ export default function DonatePage() {
 
           {/* Message Card */}
           <div
-            className="card"
+            className="card donate-message-card"
             style={{
-              padding: "var(--space-xl)",
               marginBottom: "var(--space-xl)",
             }}
           >
             <div
-              className="text-[var(--text-secondary)]"
+              className="text-[var(--text-secondary)] donate-message-text"
               style={{
                 lineHeight: "var(--leading-relaxed)",
                 fontSize: "var(--text-base)",
@@ -182,7 +182,7 @@ export default function DonatePage() {
                 Thank you for being part of this community.
               </p>
               <p
-                className="text-[var(--text-muted)] italic"
+                className="text-[var(--text-muted)] italic donate-scripture"
                 style={{ marginTop: "var(--space-md)" }}
               >
                 &ldquo;Each of you should give what you have decided in your
@@ -198,9 +198,8 @@ export default function DonatePage() {
 
           {/* Donation Amount Selection */}
           <div
-            className="card"
+            className="card donate-amount-card"
             style={{
-              padding: "var(--space-xl)",
               marginBottom: "var(--space-lg)",
             }}
           >
@@ -208,22 +207,24 @@ export default function DonatePage() {
               className="font-serif font-semibold text-[var(--text-primary)]"
               style={{
                 fontSize: "var(--text-lg)",
-                marginBottom: "var(--space-lg)",
+                marginBottom: "var(--space-sm)",
                 textAlign: "center",
               }}
             >
               Choose an Amount
             </h2>
-
-            {/* Preset amounts */}
-            <div
-              className="grid"
+            <p
+              className="text-[var(--text-muted)] text-center"
               style={{
-                gridTemplateColumns: "repeat(auto-fit, minmax(80px, 1fr))",
-                gap: "var(--space-sm)",
+                fontSize: "var(--text-sm)",
                 marginBottom: "var(--space-lg)",
               }}
             >
+              All amounts are in Canadian Dollars (CAD)
+            </p>
+
+            {/* Preset amounts - responsive grid */}
+            <div className="donate-amounts-grid">
               {DONATION_AMOUNTS.map((amount) => (
                 <button
                   key={amount}
@@ -231,11 +232,8 @@ export default function DonatePage() {
                     setSelectedAmount(amount);
                     setCustomAmount("");
                   }}
-                  className="btn"
+                  className="donate-amount-btn"
                   style={{
-                    height: "56px",
-                    fontSize: "var(--text-lg)",
-                    fontWeight: "600",
                     background:
                       selectedAmount === amount
                         ? "var(--accent-primary)"
@@ -246,7 +244,7 @@ export default function DonatePage() {
                         : "var(--text-primary)",
                     border:
                       selectedAmount === amount
-                        ? "none"
+                        ? "2px solid var(--accent-primary)"
                         : "1px solid var(--border-medium)",
                   }}
                 >
@@ -268,19 +266,14 @@ export default function DonatePage() {
               </label>
               <div className="relative">
                 <span
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
-                  style={{ fontSize: "var(--text-lg)" }}
+                  className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)] donate-currency-symbol"
                 >
                   $
                 </span>
                 <input
                   type="number"
-                  className="input"
-                  style={{
-                    paddingLeft: "32px",
-                    height: "56px",
-                    fontSize: "var(--text-lg)",
-                  }}
+                  inputMode="decimal"
+                  className="input donate-custom-input"
                   placeholder="0.00"
                   min="1"
                   step="0.01"
@@ -296,11 +289,14 @@ export default function DonatePage() {
             {/* Error message */}
             {error && (
               <div
-                className="text-[var(--error)]"
+                className="donate-error text-[var(--error)]"
                 style={{
                   fontSize: "var(--text-sm)",
                   marginBottom: "var(--space-md)",
                   textAlign: "center",
+                  padding: "var(--space-sm)",
+                  background: "var(--error-light)",
+                  borderRadius: "var(--card-radius-sm)",
                 }}
               >
                 {error}
@@ -309,18 +305,17 @@ export default function DonatePage() {
 
             {/* Donate button */}
             <button
-              className="btn btn-primary w-full"
-              style={{
-                height: "56px",
-                fontSize: "var(--text-lg)",
-              }}
+              className="btn btn-primary w-full donate-submit-btn"
               onClick={handleDonate}
               disabled={isProcessing || getDonationAmount() < 1}
             >
               {isProcessing ? (
-                "Processing..."
+                <span className="flex items-center justify-center gap-2">
+                  <span className="animate-spin inline-block w-5 h-5 border-2 border-white border-t-transparent rounded-full" />
+                  Processing...
+                </span>
               ) : getDonationAmount() > 0 ? (
-                <>Donate ${getDonationAmount().toFixed(2)}</>
+                <>Donate ${getDonationAmount().toFixed(2)} CAD</>
               ) : (
                 "Select an Amount"
               )}
@@ -328,19 +323,19 @@ export default function DonatePage() {
 
             {/* Security note */}
             <p
-              className="text-[var(--text-muted)] text-center"
+              className="text-[var(--text-muted)] text-center donate-security-note"
               style={{
                 fontSize: "var(--text-xs)",
                 marginTop: "var(--space-md)",
               }}
             >
-              🔒 Secure payment powered by Stripe
+              🔒 Secure payment powered by Stripe (CAD)
             </p>
           </div>
 
           {/* No obligation reminder */}
           <p
-            className="text-[var(--text-muted)] text-center"
+            className="text-[var(--text-muted)] text-center donate-footer-note"
             style={{ fontSize: "var(--text-sm)" }}
           >
             No account required to donate. You will receive an email receipt.
