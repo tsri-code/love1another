@@ -142,12 +142,11 @@ export function MessagesButton({
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
 
   const { user } = useAuth();
-  const { unreadMessages, refreshCounts } = useNotifications();
+  const { unreadMessages, markConversationRead } = useNotifications();
 
-  // Use notification system's unread count (more reliable than local calculation)
-  // Fall back to local calculation if notification system not available
-  const localUnread = threads.reduce((sum, t) => sum + t.unreadCount, 0);
-  const totalUnread = unreadMessages > 0 ? unreadMessages : localUnread;
+  // Use notification system's unread count directly
+  // This is the source of truth for unread message count
+  const totalUnread = unreadMessages;
 
   // Handle external open trigger (from hamburger menu)
   useEffect(() => {
@@ -407,9 +406,8 @@ export function MessagesButton({
   useEffect(() => {
     if (isOpen && user?.id) {
       fetchConversations();
-      refreshCounts(); // Sync notification counts
     }
-  }, [isOpen, user?.id, fetchConversations, refreshCounts]);
+  }, [isOpen, user?.id, fetchConversations]);
 
   // Fetch friends when compose modal opens
   useEffect(() => {
@@ -639,8 +637,8 @@ export function MessagesButton({
           : t
       )
     );
-    // Refresh notification counts after a short delay (messages are marked read on server)
-    setTimeout(() => refreshCounts(), 500);
+    // Mark notifications for this conversation as read
+    markConversationRead(thread.id);
   };
 
   const handleBackToList = () => {

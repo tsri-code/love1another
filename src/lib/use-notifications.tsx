@@ -28,6 +28,7 @@ interface NotificationContextType {
   pendingFriendRequests: number;
   refreshCounts: () => Promise<void>;
   markAllRead: () => Promise<void>;
+  markConversationRead: (conversationId: string) => Promise<void>;
   playMessageSound: () => void;
   playFriendRequestSound: () => void;
   // Sound settings
@@ -42,6 +43,7 @@ const NotificationContext = createContext<NotificationContextType>({
   pendingFriendRequests: 0,
   refreshCounts: async () => {},
   markAllRead: async () => {},
+  markConversationRead: async () => {},
   playMessageSound: () => {},
   playFriendRequestSound: () => {},
   messageSoundEnabled: true,
@@ -182,6 +184,27 @@ export function NotificationProvider({
     }
   }, [userId]);
 
+  // Mark notifications for a specific conversation as read
+  const markConversationRead = useCallback(async (conversationId: string) => {
+    if (!userId) return;
+
+    try {
+      const supabase = createClient();
+      // Mark message notifications for this conversation as read
+      await supabase
+        .from("notification_events")
+        .update({ read: true })
+        .eq("user_id", userId)
+        .eq("type", "message")
+        .contains("payload", { conversation_id: conversationId });
+
+      // Decrement the count locally (will sync on next refresh)
+      setUnreadMessages((prev) => Math.max(0, prev - 1));
+    } catch {
+      // Silent fail - will sync on next refresh
+    }
+  }, [userId]);
+
   // Initial fetch
   useEffect(() => {
     if (userId) {
@@ -265,6 +288,7 @@ export function NotificationProvider({
         pendingFriendRequests,
         refreshCounts,
         markAllRead,
+        markConversationRead,
         playMessageSound,
         playFriendRequestSound,
         messageSoundEnabled,
