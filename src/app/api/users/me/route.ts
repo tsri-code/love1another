@@ -6,6 +6,7 @@ import {
   rateLimits,
   rateLimitedResponse,
 } from "@/lib/api-security";
+import { getInitials } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -141,6 +142,37 @@ export async function PATCH(request: NextRequest) {
           { status: 500 }
         );
       }
+
+      // Sync the user's "Me" profile with their updated account info
+      // Find the user's self-profile and update it
+      try {
+        const profileUpdate: Record<string, string | null | undefined> = {};
+        
+        if (updateData.full_name) {
+          profileUpdate.display_name = updateData.full_name;
+          profileUpdate.avatar_initials = getInitials(updateData.full_name);
+        }
+        if (updateData.avatar_path !== undefined) {
+          profileUpdate.avatar_path = updateData.avatar_path;
+        }
+
+        if (Object.keys(profileUpdate).length > 0) {
+          // Update the self-profile (is_self_profile = true)
+          const { error: profileSyncError } = await supabase
+            .from("profiles")
+            .update(profileUpdate)
+            .eq("user_id", user.id)
+            .eq("is_self_profile", true);
+
+          if (profileSyncError) {
+            // Don't fail the request if profile sync fails, just log it
+            console.error("Error syncing ME profile:", profileSyncError);
+          }
+        }
+      } catch (syncError) {
+        console.error("Error syncing ME profile:", syncError);
+        // Don't fail the main request
+      }
     }
 
     // Update email if changed (requires re-verification)
@@ -160,10 +192,10 @@ export async function PATCH(request: NextRequest) {
       emailChangeInitiated = true;
     }
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       success: true,
       emailChangeInitiated,
-      message: emailChangeInitiated 
+      message: emailChangeInitiated
         ? "A verification email has been sent to your new email address. Please check your inbox and click the confirmation link to complete the change."
         : undefined
     });

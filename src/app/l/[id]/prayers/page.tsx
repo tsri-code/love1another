@@ -287,6 +287,13 @@ export default function LinkPrayerListPage({
     showToast("Marked as prayed ♡", "success");
   };
 
+  const handleShareToMessage = (prayerText: string) => {
+    // Store the prayer text to be sent as a message
+    sessionStorage.setItem("sharePrayerText", prayerText);
+    // Redirect to home where the message panel can be opened
+    router.push("/?sharePrayer=true");
+  };
+
   // Sort and categorize prayers
   const sortPrayers = (prayerList: Prayer[]) => {
     return [...prayerList].sort((a, b) => {
@@ -412,6 +419,7 @@ export default function LinkPrayerListPage({
               onUpdate={(updates) => handleUpdatePrayer(prayer.id, updates)}
               onDelete={() => handleDeletePrayer(prayer.id)}
               onMarkPrayed={() => handleMarkPrayed(prayer.id)}
+              onShareToMessage={handleShareToMessage}
               compact
             />
           ))}

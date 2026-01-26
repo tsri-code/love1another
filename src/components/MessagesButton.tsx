@@ -141,6 +141,10 @@ export function MessagesButton({
   const [selectedMembers, setSelectedMembers] = useState<SearchUser[]>([]);
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
 
+  // Share prayer state (from prayer card share feature)
+  const [sharePrayerMode, setSharePrayerMode] = useState(false);
+  const [sharePrayerText, setSharePrayerText] = useState<string | null>(null);
+
   const { user } = useAuth();
   const { unreadMessages, markConversationRead } = useNotifications();
 
@@ -193,6 +197,24 @@ export function MessagesButton({
       fetchAndStartConversation();
     }
   }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Handle share prayer flow (from prayer card share feature)
+  useEffect(() => {
+    const prayerText = sessionStorage.getItem("sharePrayerText");
+    if (prayerText && user?.id) {
+      sessionStorage.removeItem("sharePrayerText");
+      // Clear the URL parameter
+      const url = new URL(window.location.href);
+      url.searchParams.delete("sharePrayer");
+      window.history.replaceState({}, "", url.toString());
+
+      // Store the prayer text and open the panel in share mode
+      setSharePrayerText(prayerText);
+      setSharePrayerMode(true);
+      setIsOpen(true);
+      setShowSearchCompose(true);
+    }
+  }, [user?.id]);
 
   // Report unread count changes
   useEffect(() => {
@@ -821,6 +843,12 @@ export function MessagesButton({
                 getInitials={getInitials}
                 formatTime={formatTime}
                 currentUserId={user?.id}
+                initialMessage={sharePrayerText}
+                initialMessageType={sharePrayerMode ? "prayer_request" : undefined}
+                onInitialMessageUsed={() => {
+                  setSharePrayerText(null);
+                  setSharePrayerMode(false);
+                }}
               />
             ) : (
               // Threads List
@@ -935,6 +963,8 @@ export function MessagesButton({
                           setSearchResults([]);
                           setSelectedMembers([]);
                           setNewGroupName("");
+                          setSharePrayerMode(false);
+                          setSharePrayerText(null);
                         }}
                       >
                         <svg
@@ -955,44 +985,64 @@ export function MessagesButton({
                         className="font-serif font-semibold"
                         style={{ fontSize: "var(--text-lg)" }}
                       >
-                        {showCreateGroup ? "New Group" : "New Message"}
+                        {sharePrayerMode ? "Share Prayer" : showCreateGroup ? "New Group" : "New Message"}
                       </h2>
                     </div>
 
-                    {/* Toggle between direct message and group */}
-                    <div
-                      className="flex"
-                      style={{
-                        padding: "var(--space-sm) var(--space-lg)",
-                        gap: "var(--space-sm)",
-                        borderBottom: "1px solid var(--border-light)",
-                      }}
-                    >
-                      <button
-                        className="btn btn-sm flex-1"
+                    {/* Share prayer info banner */}
+                    {sharePrayerMode && (
+                      <div
                         style={{
-                          background: !showCreateGroup ? "var(--accent-primary)" : "var(--surface-secondary)",
-                          color: !showCreateGroup ? "white" : "var(--text-secondary)",
-                        }}
-                        onClick={() => {
-                          setShowCreateGroup(false);
-                          setSelectedMembers([]);
-                          setNewGroupName("");
+                          padding: "var(--space-sm) var(--space-lg)",
+                          background: "var(--accent-primary-light)",
+                          borderBottom: "1px solid var(--border-light)",
                         }}
                       >
-                        Direct
-                      </button>
-                      <button
-                        className="btn btn-sm flex-1"
+                        <p
+                          className="text-[var(--text-secondary)]"
+                          style={{ fontSize: "var(--text-sm)" }}
+                        >
+                          Select a friend to share this prayer with. It will be sent as a prayer request.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Toggle between direct message and group (hidden in share prayer mode) */}
+                    {!sharePrayerMode && (
+                      <div
+                        className="flex"
                         style={{
-                          background: showCreateGroup ? "var(--accent-primary)" : "var(--surface-secondary)",
-                          color: showCreateGroup ? "white" : "var(--text-secondary)",
+                          padding: "var(--space-sm) var(--space-lg)",
+                          gap: "var(--space-sm)",
+                          borderBottom: "1px solid var(--border-light)",
                         }}
-                        onClick={() => setShowCreateGroup(true)}
                       >
-                        Group
-                      </button>
-                    </div>
+                        <button
+                          className="btn btn-sm flex-1"
+                          style={{
+                            background: !showCreateGroup ? "var(--accent-primary)" : "var(--surface-secondary)",
+                            color: !showCreateGroup ? "white" : "var(--text-secondary)",
+                          }}
+                          onClick={() => {
+                            setShowCreateGroup(false);
+                            setSelectedMembers([]);
+                            setNewGroupName("");
+                          }}
+                        >
+                          Direct
+                        </button>
+                        <button
+                          className="btn btn-sm flex-1"
+                          style={{
+                            background: showCreateGroup ? "var(--accent-primary)" : "var(--surface-secondary)",
+                            color: showCreateGroup ? "white" : "var(--text-secondary)",
+                          }}
+                          onClick={() => setShowCreateGroup(true)}
+                        >
+                          Group
+                        </button>
+                      </div>
+                    )}
 
                     {showCreateGroup ? (
                       <>
@@ -1498,6 +1548,9 @@ interface ThreadViewProps {
   getInitials: (name: string) => string;
   formatTime: (timestamp: string) => string;
   currentUserId?: string;
+  initialMessage?: string | null;
+  initialMessageType?: "message" | "prayer_request";
+  onInitialMessageUsed?: () => void;
 }
 
 function ThreadView({
@@ -1510,10 +1563,13 @@ function ThreadView({
   getInitials,
   formatTime,
   currentUserId,
+  initialMessage,
+  initialMessageType,
+  onInitialMessageUsed,
 }: ThreadViewProps) {
-  const [newMessage, setNewMessage] = useState("");
+  const [newMessage, setNewMessage] = useState(initialMessage || "");
   const [messageType, setMessageType] = useState<"message" | "prayer_request">(
-    "message"
+    initialMessageType || "message"
   );
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(true);
@@ -1556,8 +1612,20 @@ function ThreadView({
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [showDeleteGroupConfirm, setShowDeleteGroupConfirm] = useState(false);
 
+  // Connected profile state (for direct messages - clicking name/avatar navigates to profile)
+  const [connectedProfileId, setConnectedProfileId] = useState<string | null>(null);
+
   // Ref for scrolling to bottom
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+
+  // Handle initial message from share prayer feature
+  useEffect(() => {
+    if (initialMessage) {
+      setNewMessage(initialMessage);
+      setMessageType(initialMessageType || "prayer_request");
+      onInitialMessageUsed?.();
+    }
+  }, [initialMessage, initialMessageType, onInitialMessageUsed]);
 
   // Start at bottom when messages load (instant, no animation)
   useEffect(() => {
@@ -1595,6 +1663,33 @@ function ThreadView({
         });
     }
   }, [thread.id, thread.type]);
+
+  // Fetch connected profile for direct messages (to enable navigation to their profile)
+  useEffect(() => {
+    if (thread.type !== "direct" || !thread.participantId) {
+      setConnectedProfileId(null);
+      return;
+    }
+
+    const fetchConnectedProfile = async () => {
+      try {
+        const res = await fetch(`/api/connections?connectedUserId=${thread.participantId}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.found && data.profileId) {
+            setConnectedProfileId(data.profileId);
+          } else {
+            setConnectedProfileId(null);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching connected profile:", err);
+        setConnectedProfileId(null);
+      }
+    };
+
+    fetchConnectedProfile();
+  }, [thread.id, thread.type, thread.participantId]);
 
   // Create a lookup map for group members by userId
   const memberLookup = useMemo(() => {
@@ -3128,9 +3223,16 @@ function ThreadView({
             color: "white",
             fontWeight: "600",
             fontSize: "var(--text-sm)",
-            cursor: thread.type === "group" ? "pointer" : "default",
+            cursor: thread.type === "group" || connectedProfileId ? "pointer" : "default",
           }}
-          onClick={() => thread.type === "group" && setShowGroupInfo(true)}
+          onClick={() => {
+            if (thread.type === "group") {
+              setShowGroupInfo(true);
+            } else if (connectedProfileId) {
+              // Navigate to the connected profile
+              window.location.href = `/p/${connectedProfileId}/prayers`;
+            }
+          }}
         >
           {thread.type === "group" ? (
             (groupAvatarPath || thread.groupAvatarPath) ? (
@@ -3165,9 +3267,18 @@ function ThreadView({
           )}
         </div>
         <div
-          className={`flex-1 min-w-0 ${thread.type === "group" ? "cursor-pointer rounded-lg transition-colors hover:bg-[var(--surface-secondary)]" : ""}`}
-          style={{ padding: thread.type === "group" ? "6px 10px" : "0", margin: thread.type === "group" ? "-6px -10px" : "0" }}
-          onClick={() => thread.type === "group" && setShowGroupInfo(true)}
+          className={`flex-1 min-w-0 ${thread.type === "group" || connectedProfileId ? "cursor-pointer rounded-lg transition-colors hover:bg-[var(--surface-secondary)]" : ""}`}
+          style={{ 
+            padding: thread.type === "group" || connectedProfileId ? "6px 10px" : "0", 
+            margin: thread.type === "group" || connectedProfileId ? "-6px -10px" : "0" 
+          }}
+          onClick={() => {
+            if (thread.type === "group") {
+              setShowGroupInfo(true);
+            } else if (connectedProfileId) {
+              window.location.href = `/p/${connectedProfileId}/prayers`;
+            }
+          }}
         >
           <div className="font-medium truncate">
             {thread.participantName}
@@ -3175,6 +3286,11 @@ function ThreadView({
           {thread.type === "group" && (
             <div className="text-[var(--text-muted)]" style={{ fontSize: "var(--text-xs)" }}>
               Tap for info
+            </div>
+          )}
+          {thread.type === "direct" && connectedProfileId && (
+            <div className="text-[var(--text-muted)]" style={{ fontSize: "var(--text-xs)" }}>
+              View profile
             </div>
           )}
         </div>

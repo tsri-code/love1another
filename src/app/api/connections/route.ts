@@ -6,6 +6,7 @@ import {
   getUserById,
   getProfileByConnectedUser,
   updateProfile,
+  getProfileById,
 } from "@/lib/supabase-db";
 import {
   checkRateLimit,
@@ -115,6 +116,25 @@ export async function POST(request: NextRequest) {
     if (!profileId || !connectedUserId) {
       return NextResponse.json(
         { error: "Profile ID and connected user ID are required" },
+        { status: 400 }
+      );
+    }
+
+    // Check if the profile is a self-profile (user's own "Me" profile)
+    // Self-profiles cannot have connections as they represent the user themselves
+    const profile = await getProfileById(profileId);
+    if (!profile) {
+      return NextResponse.json(
+        { error: "Profile not found" },
+        { status: 404 }
+      );
+    }
+
+    // Type-safe check for is_self_profile (may not exist in older databases)
+    const profileRecord = profile as unknown as { is_self_profile?: boolean };
+    if (profileRecord.is_self_profile) {
+      return NextResponse.json(
+        { error: "Cannot connect users to your personal profile. Create a new profile for this person instead." },
         { status: 400 }
       );
     }

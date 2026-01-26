@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { displayName, type, avatarInitials, avatarColor, avatarPath } = body;
+    const { displayName, type, avatarInitials, avatarColor, avatarPath, isSelfProfile } = body;
 
     // Validation
     if (
@@ -127,6 +127,7 @@ export async function POST(request: NextRequest) {
       avatar_initials: avatarInitials || getInitials(displayName),
       avatar_color: avatarColor || generateRandomColor(),
       avatar_path: avatarPath || null,
+      is_self_profile: isSelfProfile || false,
     });
 
     // Return in format frontend expects

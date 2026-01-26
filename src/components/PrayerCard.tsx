@@ -26,6 +26,7 @@ interface PrayerCardProps {
   onDelete: () => void;
   onMarkPrayed: () => void;
   compact?: boolean; // For column layout
+  onShareToMessage?: (prayerText: string) => void; // Callback to send prayer as message
 }
 
 export function PrayerCard({
@@ -34,24 +35,51 @@ export function PrayerCard({
   onDelete,
   onMarkPrayed,
   compact = false,
+  onShareToMessage,
 }: PrayerCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(prayer.text);
   const [showMenu, setShowMenu] = useState(false);
+  const [showShareMenu, setShowShareMenu] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showNotAnsweredPrompt, setShowNotAnsweredPrompt] = useState(false);
   const [notAnsweredNote, setNotAnsweredNote] = useState('');
+  const [copySuccess, setCopySuccess] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const shareMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setShowMenu(false);
       }
+      if (shareMenuRef.current && !shareMenuRef.current.contains(e.target as Node)) {
+        setShowShareMenu(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const handleCopyPrayer = async () => {
+    try {
+      await navigator.clipboard.writeText(prayer.text);
+      setCopySuccess(true);
+      setTimeout(() => {
+        setCopySuccess(false);
+        setShowShareMenu(false);
+      }, 1500);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  const handleSendAsMessage = () => {
+    setShowShareMenu(false);
+    if (onShareToMessage) {
+      onShareToMessage(prayer.text);
+    }
+  };
 
   const handleSave = () => {
     if (editText.trim() && editText !== prayer.text) {
@@ -76,8 +104,8 @@ export function PrayerCard({
   };
 
   const handleMarkAnswered = () => {
-    onUpdate({ 
-      answered: true, 
+    onUpdate({
+      answered: true,
       answeredAt: new Date().toISOString(),
       notAnsweredNote: null,
     });
@@ -90,7 +118,7 @@ export function PrayerCard({
   };
 
   const handleSubmitNotAnswered = () => {
-    onUpdate({ 
+    onUpdate({
       answered: true,
       answeredAt: new Date().toISOString(),
       notAnsweredNote: notAnsweredNote.trim() || 'Prayer closed without answer',
@@ -101,7 +129,7 @@ export function PrayerCard({
 
   const handleMoveToCategory = (category: PrayerCategory) => {
     // When moving to a category, also mark as unanswered
-    onUpdate({ 
+    onUpdate({
       category,
       answered: false,
       answeredAt: null,
@@ -125,7 +153,7 @@ export function PrayerCard({
         ${prayer.pinned ? 'ring-2 ring-[var(--accent-primary)] ring-opacity-40 bg-[var(--surface-secondary)]' : ''}
         ${prayer.answered ? 'opacity-80' : ''}
       `}
-      style={{ 
+      style={{
         overflow: 'visible',
         padding: compact ? 'var(--space-md)' : undefined,
         zIndex: showMenu ? 9999 : 'auto',
@@ -136,7 +164,7 @@ export function PrayerCard({
       {(prayer.pinned || prayer.notAnsweredNote) && (
         <div className="flex items-center flex-wrap" style={{ gap: 'var(--space-xs)', marginBottom: 'var(--space-sm)' }}>
           {prayer.pinned && (
-            <span 
+            <span
               className="badge bg-[var(--accent-primary)] text-white flex items-center"
               style={{ gap: '4px' }}
             >
@@ -178,9 +206,9 @@ export function PrayerCard({
           </div>
         </div>
       ) : (
-        <p 
+        <p
           className={`whitespace-pre-wrap ${prayer.answered && !prayer.notAnsweredNote ? 'line-through opacity-60' : ''}`}
-          style={{ 
+          style={{
             lineHeight: '1.6',
             fontSize: compact ? 'var(--text-base)' : 'var(--text-lg)',
             fontWeight: 500,
@@ -193,7 +221,7 @@ export function PrayerCard({
 
       {/* Not answered note */}
       {prayer.notAnsweredNote && (
-        <div 
+        <div
           className="bg-[var(--bg-secondary)] rounded-[var(--radius-sm)]"
           style={{ marginTop: 'var(--space-sm)', padding: 'var(--space-sm)' }}
         >
@@ -205,7 +233,7 @@ export function PrayerCard({
 
       {/* Footer */}
       {!isEditing && (
-        <div 
+        <div
           className="flex items-center justify-between border-t border-[var(--border-light)]"
           style={{ marginTop: 'var(--space-md)', paddingTop: 'var(--space-md)' }}
         >
@@ -249,6 +277,71 @@ export function PrayerCard({
               </span>
             )}
 
+            {/* Share Button */}
+            <div className="relative" ref={shareMenuRef}>
+              <span className="tooltip-wrapper" data-tooltip="Share">
+                <button
+                  onClick={() => setShowShareMenu(!showShareMenu)}
+                  className="icon-btn hover:text-[var(--accent-primary)] hover:bg-[var(--accent-primary-light)]"
+                >
+                  <svg style={{ width: '18px', height: '18px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                  </svg>
+                </button>
+              </span>
+
+              {showShareMenu && (
+                <div 
+                  className="absolute right-0 bottom-full card card-elevated animate-scale-in origin-bottom-right"
+                  style={{ 
+                    marginBottom: '8px', 
+                    width: '180px', 
+                    padding: 'var(--space-sm)',
+                    zIndex: 99999,
+                    boxShadow: '0 -4px 20px rgba(0,0,0,0.15), 0 4px 20px rgba(0,0,0,0.15)',
+                  }}
+                >
+                  <button
+                    onClick={handleCopyPrayer}
+                    className="w-full text-left flex items-center hover:bg-[var(--bg-secondary)] rounded-[var(--card-radius-sm)] transition-colors"
+                    style={{ gap: 'var(--space-sm)', padding: 'var(--space-sm)', fontSize: 'var(--text-sm)' }}
+                  >
+                    {copySuccess ? (
+                      <>
+                        <svg style={{ width: '16px', height: '16px' }} className="text-[var(--success)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span className="text-[var(--success)]">Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg style={{ width: '16px', height: '16px' }} className="text-[var(--text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                        Copy Prayer
+                      </>
+                    )}
+                  </button>
+
+                  {onShareToMessage && (
+                    <>
+                      <div className="divider" style={{ margin: 'var(--space-xs) 0' }} />
+                      <button
+                        onClick={handleSendAsMessage}
+                        className="w-full text-left flex items-center hover:bg-[var(--bg-secondary)] rounded-[var(--card-radius-sm)] transition-colors"
+                        style={{ gap: 'var(--space-sm)', padding: 'var(--space-sm)', fontSize: 'var(--text-sm)' }}
+                      >
+                        <svg style={{ width: '16px', height: '16px' }} className="text-[var(--text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                        </svg>
+                        Send as Message
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
             <div className="relative" ref={menuRef}>
               <button
                 onClick={() => setShowMenu(!showMenu)}
@@ -261,11 +354,11 @@ export function PrayerCard({
               </button>
 
               {showMenu && (
-                <div 
+                <div
                   className="absolute right-0 bottom-full card card-elevated animate-scale-in origin-bottom-right"
-                  style={{ 
-                    marginBottom: '8px', 
-                    width: '220px', 
+                  style={{
+                    marginBottom: '8px',
+                    width: '220px',
                     padding: 'var(--space-sm)',
                     zIndex: 99999,
                     boxShadow: '0 -4px 20px rgba(0,0,0,0.15), 0 4px 20px rgba(0,0,0,0.15)',
@@ -285,13 +378,13 @@ export function PrayerCard({
 
                   {/* Move to category options */}
                   <div className="divider" style={{ margin: 'var(--space-xs) 0' }} />
-                  <p 
+                  <p
                     className="text-[var(--text-muted)] font-medium"
                     style={{ fontSize: 'var(--text-xs)', padding: '4px 8px' }}
                   >
                     Move to:
                   </p>
-                  
+
                   {/* Move to Immediate */}
                   <button
                     onClick={() => handleMoveToCategory('immediate')}
@@ -311,7 +404,7 @@ export function PrayerCard({
                       <span className="text-[var(--text-muted)] ml-auto">Current</span>
                     )}
                   </button>
-                  
+
                   {/* Move to Ongoing */}
                   <button
                     onClick={() => handleMoveToCategory('ongoing')}
@@ -376,7 +469,7 @@ export function PrayerCard({
                   )}
 
                   <div className="divider" style={{ margin: 'var(--space-xs) 0' }} />
-                  
+
                   <button
                     onClick={() => { setShowDeleteConfirm(true); setShowMenu(false); }}
                     className="w-full text-left flex items-center text-[var(--error)] hover:bg-[var(--error-light)] rounded-[var(--card-radius-sm)] transition-colors"
@@ -396,11 +489,11 @@ export function PrayerCard({
 
       {/* Delete confirmation */}
       {showDeleteConfirm && (
-        <div 
+        <div
           className="bg-[var(--error-light)] border border-[var(--error)] border-opacity-30 rounded-[var(--card-radius-sm)]"
           style={{ marginTop: 'var(--space-md)', padding: 'var(--space-md)' }}
         >
-          <p 
+          <p
             className="text-[var(--error)] font-medium"
             style={{ fontSize: 'var(--text-sm)', marginBottom: 'var(--space-sm)' }}
           >
@@ -419,11 +512,11 @@ export function PrayerCard({
 
       {/* Not answered prompt */}
       {showNotAnsweredPrompt && (
-        <div 
+        <div
           className="bg-[var(--bg-secondary)] border border-[var(--border-light)] rounded-[var(--card-radius-sm)]"
           style={{ marginTop: 'var(--space-md)', padding: 'var(--space-md)' }}
         >
-          <p 
+          <p
             className="text-[var(--text-primary)] font-medium"
             style={{ fontSize: 'var(--text-sm)', marginBottom: 'var(--space-sm)' }}
           >

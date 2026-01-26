@@ -634,6 +634,7 @@ export default function LoginPage() {
                     type: "person",
                     avatarInitials: initials,
                     avatarColor: "#7c9bb8",
+                    isSelfProfile: true, // Mark as user's own profile
                   }),
                 });
               } catch (profileError) {
@@ -677,6 +678,7 @@ export default function LoginPage() {
               type: "person",
               avatarInitials: initials,
               avatarColor: "#7c9bb8", // Default blue color
+              isSelfProfile: true, // Mark as user's own profile
             }),
           });
         } catch (profileError) {

@@ -5,13 +5,65 @@ import { useEffect, useState } from "react";
 import { MobileMenu } from "./MobileMenu";
 import { PWAInstructions } from "./PWAInstructions";
 
+const SUBJECT_OPTIONS = [
+  { value: "question", label: "Question" },
+  { value: "feature", label: "Feature Request" },
+  { value: "bug", label: "Bug Report" },
+  { value: "review", label: "Review/Feedback" },
+  { value: "other", label: "Other" },
+];
+
 export function LandingPage() {
   const router = useRouter();
   const [isVisible, setIsVisible] = useState(false);
 
+  // Contact form state
+  const [showContactModal, setShowContactModal] = useState(false);
+  const [contactForm, setContactForm] = useState({
+    name: "",
+    email: "",
+    subject: "question",
+    message: "",
+  });
+  const [isSendingContact, setIsSendingContact] = useState(false);
+  const [contactSuccess, setContactSuccess] = useState(false);
+  const [contactError, setContactError] = useState("");
+
   useEffect(() => {
     setIsVisible(true);
   }, []);
+
+  const handleContactSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setContactError("");
+    setIsSendingContact(true);
+
+    try {
+      const res = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(contactForm),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to send message");
+      }
+
+      setContactSuccess(true);
+      setContactForm({ name: "", email: "", subject: "question", message: "" });
+    } catch (err) {
+      setContactError(err instanceof Error ? err.message : "Failed to send message");
+    } finally {
+      setIsSendingContact(false);
+    }
+  };
+
+  const closeContactModal = () => {
+    setShowContactModal(false);
+    setContactSuccess(false);
+    setContactError("");
+  };
 
   return (
     <div className="min-h-screen bg-[var(--bg-primary)]">
@@ -414,12 +466,22 @@ export function LandingPage() {
                 fontSize: "var(--text-base)",
                 fontWeight: 500,
                 textAlign: "center",
+                marginBottom: "var(--space-md)",
               }}
             >
               Questions? Create a free account and message{" "}
               <strong style={{ color: "var(--accent-primary)" }}>@support</strong>{" "}
               directly in the app.
             </p>
+            <div style={{ textAlign: "center" }}>
+              <button
+                onClick={() => setShowContactModal(true)}
+                className="btn btn-secondary"
+                style={{ minWidth: "160px" }}
+              >
+                Or Contact Us Here
+              </button>
+            </div>
           </div>
         </div>
       </section>
@@ -494,6 +556,211 @@ export function LandingPage() {
         </div>
         <p>© {new Date().getFullYear()} Love1Another. Made with ♡</p>
       </footer>
+
+      {/* Contact Modal */}
+      {showContactModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ backgroundColor: "rgba(0, 0, 0, 0.6)" }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeContactModal();
+          }}
+        >
+          <div
+            className="contact-modal bg-[var(--surface-primary)] rounded-2xl shadow-xl w-full max-h-[90vh] overflow-y-auto"
+            style={{
+              maxWidth: "480px",
+              margin: "var(--space-md)",
+              animation: "fadeIn 0.2s ease-out",
+            }}
+          >
+            {/* Modal Header */}
+            <div
+              className="flex items-center justify-between"
+              style={{
+                padding: "var(--space-lg)",
+                borderBottom: "1px solid var(--border-light)",
+              }}
+            >
+              <h2
+                className="font-serif font-semibold text-[var(--text-primary)]"
+                style={{ fontSize: "var(--text-xl)" }}
+              >
+                Contact Us
+              </h2>
+              <button
+                onClick={closeContactModal}
+                className="icon-btn"
+                aria-label="Close"
+              >
+                <svg
+                  style={{ width: "20px", height: "20px" }}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div style={{ padding: "var(--space-lg)" }}>
+              {contactSuccess ? (
+                <div className="text-center" style={{ padding: "var(--space-xl) 0" }}>
+                  <div
+                    style={{
+                      width: "64px",
+                      height: "64px",
+                      borderRadius: "50%",
+                      background: "var(--success)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      margin: "0 auto var(--space-lg)",
+                    }}
+                  >
+                    <svg
+                      style={{ width: "32px", height: "32px", color: "white" }}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M5 13l4 4L19 7"
+                      />
+                    </svg>
+                  </div>
+                  <h3
+                    className="font-serif font-semibold text-[var(--text-primary)]"
+                    style={{ fontSize: "var(--text-lg)", marginBottom: "var(--space-sm)" }}
+                  >
+                    Message Sent!
+                  </h3>
+                  <p
+                    className="text-[var(--text-secondary)]"
+                    style={{ marginBottom: "var(--space-lg)" }}
+                  >
+                    Thank you for reaching out. We&apos;ll get back to you soon.
+                  </p>
+                  <button
+                    onClick={closeContactModal}
+                    className="btn btn-primary"
+                  >
+                    Close
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleContactSubmit}>
+                  <div className="form-group">
+                    <label className="label">Your Name</label>
+                    <input
+                      type="text"
+                      className="input"
+                      placeholder="Enter your name"
+                      value={contactForm.name}
+                      onChange={(e) =>
+                        setContactForm({ ...contactForm, name: e.target.value })
+                      }
+                      required
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="label">Email Address</label>
+                    <input
+                      type="email"
+                      className="input"
+                      placeholder="you@example.com"
+                      value={contactForm.email}
+                      onChange={(e) =>
+                        setContactForm({ ...contactForm, email: e.target.value })
+                      }
+                      required
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="label">Subject</label>
+                    <select
+                      className="input"
+                      value={contactForm.subject}
+                      onChange={(e) =>
+                        setContactForm({ ...contactForm, subject: e.target.value })
+                      }
+                      required
+                    >
+                      {SUBJECT_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="label">Message</label>
+                    <textarea
+                      className="input"
+                      placeholder="How can we help you?"
+                      value={contactForm.message}
+                      onChange={(e) =>
+                        setContactForm({ ...contactForm, message: e.target.value })
+                      }
+                      required
+                      rows={5}
+                      style={{ resize: "vertical", minHeight: "120px" }}
+                    />
+                  </div>
+
+                  {contactError && (
+                    <div
+                      style={{
+                        marginBottom: "var(--space-md)",
+                        padding: "var(--space-sm) var(--space-md)",
+                        backgroundColor: "rgba(239, 68, 68, 0.1)",
+                        border: "1px solid var(--error)",
+                        borderRadius: "var(--radius-md)",
+                        color: "var(--error)",
+                        fontSize: "var(--text-sm)",
+                      }}
+                    >
+                      {contactError}
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    className="btn btn-primary w-full"
+                    disabled={isSendingContact}
+                    style={{ marginTop: "var(--space-sm)" }}
+                  >
+                    {isSendingContact ? "Sending..." : "Send Message"}
+                  </button>
+
+                  <p
+                    className="text-[var(--text-muted)] text-center"
+                    style={{
+                      fontSize: "var(--text-xs)",
+                      marginTop: "var(--space-md)",
+                    }}
+                  >
+                    We typically respond within 24-48 hours.
+                  </p>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
