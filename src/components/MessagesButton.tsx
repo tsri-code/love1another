@@ -5,6 +5,7 @@ import { useAuth } from "@/components/AuthGuard";
 import { useAlertBanner } from "@/components/ui/alert-banner";
 import { useCrypto } from "@/lib/use-crypto";
 import { createClient } from "@/lib/supabase";
+import { useNotifications } from "@/lib/use-notifications";
 
 interface Profile {
   id: string;
@@ -141,7 +142,12 @@ export function MessagesButton({
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
 
   const { user } = useAuth();
-  const totalUnread = threads.reduce((sum, t) => sum + t.unreadCount, 0);
+  const { unreadMessages, refreshCounts } = useNotifications();
+
+  // Use notification system's unread count (more reliable than local calculation)
+  // Fall back to local calculation if notification system not available
+  const localUnread = threads.reduce((sum, t) => sum + t.unreadCount, 0);
+  const totalUnread = unreadMessages > 0 ? unreadMessages : localUnread;
 
   // Handle external open trigger (from hamburger menu)
   useEffect(() => {
@@ -401,8 +407,9 @@ export function MessagesButton({
   useEffect(() => {
     if (isOpen && user?.id) {
       fetchConversations();
+      refreshCounts(); // Sync notification counts
     }
-  }, [isOpen, user?.id, fetchConversations]);
+  }, [isOpen, user?.id, fetchConversations, refreshCounts]);
 
   // Fetch friends when compose modal opens
   useEffect(() => {
@@ -620,7 +627,7 @@ export function MessagesButton({
 
   const handleOpenThread = (thread: Thread) => {
     setSelectedThread(thread);
-    // Mark as read
+    // Mark as read locally
     setThreads((prev) =>
       prev.map((t) =>
         t.id === thread.id
@@ -632,6 +639,8 @@ export function MessagesButton({
           : t
       )
     );
+    // Refresh notification counts after a short delay (messages are marked read on server)
+    setTimeout(() => refreshCounts(), 500);
   };
 
   const handleBackToList = () => {

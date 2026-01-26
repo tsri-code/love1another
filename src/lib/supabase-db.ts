@@ -5,7 +5,7 @@
  * All operations are scoped to the authenticated user via RLS.
  */
 
-import { createServerSupabaseClient } from "./supabase-server";
+import { createServerSupabaseClient, createAdminSupabaseClient } from "./supabase-server";
 import { getInitials } from "./utils";
 
 // ============================================================================
@@ -1367,14 +1367,23 @@ export async function getUserById(userId: string): Promise<{
 export async function createMessageNotification(
   conversationId: string,
   senderId: string,
+  senderName: string,
   messageId: string,
   messageType: string
 ): Promise<void> {
-  const supabase = await createServerSupabaseClient();
+  // Use admin client for reads (to bypass RLS on conversations)
+  // and for inserts (notification_events has no INSERT policy)
+  let adminClient;
+  try {
+    adminClient = createAdminSupabaseClient();
+  } catch (error) {
+    console.error("Admin client not available for notifications:", error);
+    return;
+  }
 
   try {
-    // Get conversation details
-    const { data: conversation, error: convError } = await supabase
+    // Get conversation details using admin client
+    const { data: conversation, error: convError } = await adminClient
       .from("conversations")
       .select("*")
       .eq("id", conversationId)
@@ -1385,14 +1394,7 @@ export async function createMessageNotification(
       return;
     }
 
-    // Get sender name
-    const { data: senderData } = await supabase
-      .from("users")
-      .select("full_name, username")
-      .eq("id", senderId)
-      .single();
-
-    const senderName = senderData?.full_name || senderData?.username || "Someone";
+    const displayName = senderName || "Someone";
     const isPrayer = messageType === "prayer_request";
 
     if (conversation.type === "private") {
@@ -1404,7 +1406,7 @@ export async function createMessageNotification(
 
       if (recipientId) {
         // Check if recipient has soft-deleted the conversation
-        const { data: deletion } = await supabase
+        const { data: deletion } = await adminClient
           .from("conversation_deletions")
           .select("id")
           .eq("conversation_id", conversationId)
@@ -1412,10 +1414,10 @@ export async function createMessageNotification(
           .maybeSingle();
 
         if (!deletion) {
-          await supabase.from("notification_events").insert({
+          const { error: insertError } = await adminClient.from("notification_events").insert({
             user_id: recipientId,
             type: "message",
-            title: senderName,
+            title: displayName,
             body: isPrayer ? "Sent a prayer request" : "New message",
             payload: {
               conversation_id: conversationId,
@@ -1424,11 +1426,14 @@ export async function createMessageNotification(
               is_prayer_request: isPrayer,
             },
           });
+          if (insertError) {
+            console.error("Error inserting message notification:", insertError);
+          }
         }
       }
     } else if (conversation.type === "group") {
       // Group conversation - notify all members except sender
-      const { data: members } = await supabase
+      const { data: members } = await adminClient
         .from("conversation_members")
         .select("user_id")
         .eq("conversation_id", conversationId)
@@ -1436,7 +1441,7 @@ export async function createMessageNotification(
 
       if (members && members.length > 0) {
         // Get users who haven't soft-deleted the conversation
-        const { data: deletions } = await supabase
+        const { data: deletions } = await adminClient
           .from("conversation_deletions")
           .select("user_id")
           .eq("conversation_id", conversationId);
@@ -1450,7 +1455,7 @@ export async function createMessageNotification(
           .map((member) => ({
             user_id: member.user_id,
             type: "message" as const,
-            title: `${conversation.group_name || "Group"}: ${senderName}`,
+            title: `${conversation.group_name || "Group"}: ${displayName}`,
             body: isPrayer ? "Sent a prayer request" : "New message",
             payload: {
               conversation_id: conversationId,
@@ -1462,7 +1467,10 @@ export async function createMessageNotification(
           }));
 
         if (notifications.length > 0) {
-          await supabase.from("notification_events").insert(notifications);
+          const { error: insertError } = await adminClient.from("notification_events").insert(notifications);
+          if (insertError) {
+            console.error("Error inserting group message notifications:", insertError);
+          }
         }
       }
     }

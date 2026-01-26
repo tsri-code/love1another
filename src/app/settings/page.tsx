@@ -329,15 +329,25 @@ export default function SettingsPage() {
         }),
       });
 
+      const data = await res.json();
+
       if (!res.ok) {
-        const data = await res.json();
         throw new Error(data.error || "Failed to update profile");
       }
 
-      showToast("Profile updated successfully", "success");
-
-      // Refresh the page to update auth context
-      window.location.reload();
+      // Check if email change was initiated (requires verification)
+      if (data.emailChangeInitiated) {
+        showToast(
+          "Verification email sent! Check your new email inbox and click the confirmation link.",
+          "info"
+        );
+        // Reset email field to original since it hasn't changed yet
+        setEmailValue(user?.email || "");
+      } else {
+        showToast("Profile updated successfully", "success");
+        // Refresh the page to update auth context
+        window.location.reload();
+      }
     } catch (error) {
       console.error("Error saving profile:", error);
       setProfileError(

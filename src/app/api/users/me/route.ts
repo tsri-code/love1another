@@ -144,7 +144,8 @@ export async function PATCH(request: NextRequest) {
     }
 
     // Update email if changed (requires re-verification)
-    if (email && email !== user.email) {
+    let emailChangeInitiated = false;
+    if (email && email.trim().toLowerCase() !== user.email?.toLowerCase()) {
       const { error: emailError } = await supabase.auth.updateUser({
         email: email.trim(),
       });
@@ -156,9 +157,16 @@ export async function PATCH(request: NextRequest) {
           { status: 400 }
         );
       }
+      emailChangeInitiated = true;
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ 
+      success: true,
+      emailChangeInitiated,
+      message: emailChangeInitiated 
+        ? "A verification email has been sent to your new email address. Please check your inbox and click the confirmation link to complete the change."
+        : undefined
+    });
   } catch (error) {
     console.error("Error updating user:", error);
     return NextResponse.json(

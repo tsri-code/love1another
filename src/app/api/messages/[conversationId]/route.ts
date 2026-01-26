@@ -133,8 +133,14 @@ export async function POST(
       message_type: type,
     });
 
+    // Get sender name from user metadata
+    const senderName = user.user_metadata?.full_name || 
+                       user.user_metadata?.name || 
+                       user.email?.split("@")[0] || 
+                       "Someone";
+
     // Create notification for recipient(s) - don't await, let it happen async
-    createMessageNotification(conversationId, user.id, message.id, type).catch(
+    createMessageNotification(conversationId, user.id, senderName, message.id, type).catch(
       (err) => console.error("Failed to create message notification:", err)
     );
 
