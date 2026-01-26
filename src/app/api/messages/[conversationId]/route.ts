@@ -6,7 +6,6 @@ import {
   sendMessage,
   markMessagesAsRead,
   deleteConversation,
-  createMessageNotification,
 } from "@/lib/supabase-db";
 import {
   checkRateLimit,
@@ -41,9 +40,12 @@ export async function GET(
     const limit = parseInt(searchParams.get("limit") || "50", 10);
     const newestFirst = searchParams.get("newest") === "true";
     const includeSender = searchParams.get("includeSender") === "true";
+    const skipMarkRead = searchParams.get("skipMarkRead") === "true";
 
-    // Mark messages as read (RPC function handles access control)
-    await markMessagesAsRead(conversationId, user.id);
+    // Mark messages as read (unless skipMarkRead is set - used for preview fetches)
+    if (!skipMarkRead) {
+      await markMessagesAsRead(conversationId, user.id);
+    }
 
     if (includeSender) {
       // Use the new function that includes sender info
@@ -133,16 +135,8 @@ export async function POST(
       message_type: type,
     });
 
-    // Get sender name from user metadata
-    const senderName = user.user_metadata?.full_name || 
-                       user.user_metadata?.name || 
-                       user.email?.split("@")[0] || 
-                       "Someone";
-
-    // Create notification for recipient(s) - don't await, let it happen async
-    createMessageNotification(conversationId, user.id, senderName, message.id, type).catch(
-      (err) => console.error("Failed to create message notification:", err)
-    );
+    // Note: Notifications are created by database trigger (on_message_insert_notification)
+    // No need to call createMessageNotification here
 
     return NextResponse.json(
       {

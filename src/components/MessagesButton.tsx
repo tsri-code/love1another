@@ -259,7 +259,7 @@ export function MessagesButton({
               };
 
               try {
-                const msgRes = await fetch(`/api/messages/${conv.id}?limit=1&newest=true`);
+                const msgRes = await fetch(`/api/messages/${conv.id}?limit=1&newest=true&skipMarkRead=true`);
                 if (msgRes.ok) {
                   const msgData = await msgRes.json();
                   const messages = msgData.messages || [];
@@ -321,7 +321,7 @@ export function MessagesButton({
             };
 
             try {
-              const msgRes = await fetch(`/api/messages/${group.id}?limit=1&newest=true`);
+              const msgRes = await fetch(`/api/messages/${group.id}?limit=1&newest=true&skipMarkRead=true`);
               if (msgRes.ok) {
                 const msgData = await msgRes.json();
                 const messages = msgData.messages || [];

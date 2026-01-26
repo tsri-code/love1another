@@ -190,16 +190,29 @@ export function NotificationProvider({
 
     try {
       const supabase = createClient();
-      // Mark message notifications for this conversation as read
+
+      // First, count how many unread notifications exist for this conversation
+      const { count } = await supabase
+        .from("notification_events")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .eq("type", "message")
+        .eq("read", false)
+        .contains("payload", { conversation_id: conversationId });
+
+      // Mark all message notifications for this conversation as read
       await supabase
         .from("notification_events")
         .update({ read: true })
         .eq("user_id", userId)
         .eq("type", "message")
+        .eq("read", false)
         .contains("payload", { conversation_id: conversationId });
 
-      // Decrement the count locally (will sync on next refresh)
-      setUnreadMessages((prev) => Math.max(0, prev - 1));
+      // Decrement by the actual count of notifications cleared
+      if (count && count > 0) {
+        setUnreadMessages((prev) => Math.max(0, prev - count));
+      }
     } catch {
       // Silent fail - will sync on next refresh
     }
@@ -244,7 +257,7 @@ export function NotificationProvider({
             case "message":
               setUnreadMessages((prev) => prev + 1);
               playMessageSound();
-              showToast(notification.title, "info");
+              // No toast for messages - the badge is enough
               break;
 
             case "friend_request":
