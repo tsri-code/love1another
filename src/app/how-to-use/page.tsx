@@ -193,8 +193,8 @@ export default function HowToUsePage() {
                   <strong>Connect to a friend</strong> — If this person also
                   uses Love1Another and you&apos;re friends with them, you can
                   link their account to this profile. When you do, their prayer
-                  requests will automatically appear in your prayer list for
-                  them!
+                  requests can be added automatically from messages to their
+                  profile!
                 </p>
                 <p>
                   <strong>Edit anytime</strong> — Tap on any profile, then tap
@@ -260,8 +260,10 @@ export default function HowToUsePage() {
                   of God&apos;s faithfulness.
                 </p>
                 <p style={{ marginBottom: "var(--space-sm)" }}>
-                  <strong>Delete a prayer</strong> — Swipe left on any prayer
-                  request (or tap the trash icon) to remove it from the list.
+                  <strong>Delete a prayer</strong> — Tap the trash icon to
+                  delete it. You can also mark it as not answered, where
+                  you&apos;ll be prompted to type how it was answered
+                  differently.
                 </p>
                 <p style={{ marginBottom: "var(--space-sm)" }}>
                   <strong>Track your prayer time</strong> — Tap the &quot;Prayed&quot;
@@ -331,11 +333,12 @@ export default function HowToUsePage() {
                   with you. Tap &quot;Accept&quot; to become friends.
                 </p>
                 <p style={{ marginBottom: "var(--space-sm)" }}>
-                  <strong>Link friends to profiles</strong> — After accepting a
-                  friend request, you&apos;ll be asked to create a new profile
-                  for them or link them to an existing profile. This connection
-                  means their prayer requests will automatically show up in your
-                  prayer list for them.
+                  <strong>Connect friends to profiles</strong> — After accepting
+                  a friend request, you&apos;ll be asked to create a new profile
+                  for them or connect them to an existing profile. This
+                  connection means their prayer requests from messages can
+                  automatically show up in your prayer list for them when you
+                  hit &quot;Add to prayer list&quot;.
                 </p>
                 <p style={{ marginBottom: "var(--space-sm)" }}>
                   <strong>Invite others</strong> — Go to the &quot;Invite&quot;
@@ -470,7 +473,7 @@ export default function HowToUsePage() {
                 <p style={{ marginBottom: "var(--space-sm)" }}>
                   <strong>Add members</strong> — Select which friends you want
                   to include in the group. Only the person who created the group
-                  can add new members later.
+                  or appointed admins can add new members later.
                 </p>
                 <p style={{ marginBottom: "var(--space-sm)" }}>
                   <strong>Share prayer requests</strong> — Anyone in the group
@@ -479,13 +482,13 @@ export default function HowToUsePage() {
                 </p>
                 <p style={{ marginBottom: "var(--space-sm)" }}>
                   <strong>Leave a group</strong> — To leave a group you&apos;re
-                  in, simply delete the conversation. You&apos;ll be removed
-                  from the group.
+                  in, select &quot;Tap for more info&quot;, scroll down, and
+                  leave the group.
                 </p>
                 <p>
-                  <strong>Manage members</strong> — If you created the group,
-                  tap the group info icon to add new members or remove existing
-                  ones.
+                  <strong>Manage members</strong> — If you created the group, or
+                  are an admin, tap the group info icon to add new members or
+                  remove existing ones.
                 </p>
               </div>
             </div>
@@ -530,16 +533,15 @@ export default function HowToUsePage() {
                 </p>
                 <p style={{ marginBottom: "var(--space-sm)" }}>
                   <strong>Change your email</strong> — Update the email address
-                  linked to your account. You&apos;ll need to verify the new
-                  email.
+                  linked to your account whenever you need to. You&apos;ll need
+                  to verify the new email.
                 </p>
                 <p style={{ marginBottom: "var(--space-sm)" }}>
-                  <strong>Change your password</strong> — Keep your account
-                  secure by updating your password regularly.
-                </p>
-                <p style={{ marginBottom: "var(--space-sm)" }}>
-                  <strong>Dark mode</strong> — Switch between light and dark
-                  themes to suit your preference.
+                  <strong>Change your password</strong> — If you need to change
+                  your password, you can do it in the app or at the login
+                  screen. Make sure to keep your encrypted reveal keys saved —
+                  those are important and needed to access all your encrypted
+                  data. Without them, all your data will be unreadable.
                 </p>
                 <p style={{ marginBottom: "var(--space-sm)" }}>
                   <strong>Install as app</strong> — Add Love1Another to your
@@ -596,6 +598,16 @@ export default function HowToUsePage() {
                   <strong>We cannot read your prayers</strong> — Not even the
                   people who built this app can see what you&apos;re praying
                   for. Your conversations with God remain between you and Him.
+                </p>
+                <p style={{ marginBottom: "var(--space-sm)" }}>
+                  <strong>Your reveal keys are essential</strong> — When you
+                  create an account, special encryption keys are generated just
+                  for you. These &quot;reveal keys&quot; are what unlock all
+                  your encrypted prayers and messages. Without them, your data
+                  cannot be read — not even by us. Keep your reveal keys saved
+                  somewhere safe (you can view them in Settings). If you change
+                  your password, you&apos;ll need to re-enter these keys to
+                  continue accessing your data.
                 </p>
                 <p style={{ marginBottom: "var(--space-sm)" }}>
                   <strong>Secure login</strong> — Your account is protected with
