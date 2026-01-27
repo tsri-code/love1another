@@ -522,6 +522,9 @@ export default function LoginPage() {
             // Unlock legacy keys as well
             await unlock(userKeys, password, data.user.id);
 
+            // Check for user milestone (fire and forget - don't block UI)
+            fetch("/api/admin/milestone-check", { method: "POST" }).catch(() => {});
+
             // Show recovery code to user before continuing
             setNewUserRecoveryCode(recoveryCode);
             setShowRecoveryCodeSetup(true);
@@ -640,6 +643,9 @@ export default function LoginPage() {
               } catch (profileError) {
                 console.error("Error creating default profile:", profileError);
               }
+
+              // Check for user milestone (fire and forget - don't block UI)
+              fetch("/api/admin/milestone-check", { method: "POST" }).catch(() => {});
 
               // Show recovery code to user before continuing
               setNewUserRecoveryCode(recoveryCode);
