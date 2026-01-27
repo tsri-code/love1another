@@ -149,24 +149,23 @@ export function Navbar({
 
       {/* Hamburger Menu */}
       <div className="relative" ref={menuRef}>
-        <span className="tooltip-wrapper tooltip-bottom" data-tooltip="Menu">
           <button
             onClick={() => setIsMenuOpen(!isMenuOpen)}
-            className="flex items-center justify-center transition-colors"
+            className={`flex items-center justify-center transition-colors hover:bg-[var(--surface-secondary)] ${isMenuOpen ? "bg-[var(--surface-secondary)]" : "bg-transparent"}`}
             style={{
-              width: "40px",
               height: "40px",
+              padding: "0 var(--space-sm)",
               borderRadius: "var(--card-radius-sm)",
-              background: isMenuOpen ? "var(--surface-secondary)" : "transparent",
               border: "none",
               cursor: "pointer",
               position: "relative",
+              gap: "var(--space-xs)",
             }}
             aria-label="Menu"
           >
           {/* Hamburger Icon */}
           <svg
-            style={{ width: "24px", height: "24px" }}
+            style={{ width: "22px", height: "22px" }}
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -190,15 +189,19 @@ export function Navbar({
               />
             )}
           </svg>
+          <span
+            className="text-[var(--text-primary)] font-medium"
+            style={{ fontSize: "var(--text-sm)" }}
+          >
+            Menu
+          </span>
 
           {/* Notification Badge - Desktop: only friend requests, Mobile: all notifications */}
           {/* Desktop badge (hidden on mobile) - only shows friend request count */}
           {pendingRequestCount > 0 && (
             <span
-              className="absolute flex items-center justify-center hide-mobile"
+              className="flex items-center justify-center hide-mobile"
               style={{
-                top: "4px",
-                right: "4px",
                 minWidth: "18px",
                 height: "18px",
                 borderRadius: "9px",
@@ -207,6 +210,7 @@ export function Navbar({
                 fontSize: "11px",
                 fontWeight: "600",
                 padding: "0 5px",
+                marginLeft: "var(--space-xs)",
               }}
             >
               {pendingRequestCount > 9 ? "9+" : pendingRequestCount}
@@ -215,10 +219,8 @@ export function Navbar({
           {/* Mobile badge (hidden on desktop) - shows all notifications */}
           {totalNotifications > 0 && (
             <span
-              className="absolute flex items-center justify-center show-mobile"
+              className="flex items-center justify-center show-mobile"
               style={{
-                top: "4px",
-                right: "4px",
                 minWidth: "18px",
                 height: "18px",
                 borderRadius: "9px",
@@ -227,13 +229,13 @@ export function Navbar({
                 fontSize: "11px",
                 fontWeight: "600",
                 padding: "0 5px",
+                marginLeft: "var(--space-xs)",
               }}
             >
               {totalNotifications > 9 ? "9+" : totalNotifications}
             </span>
           )}
         </button>
-        </span>
 
         {/* Dropdown Menu */}
         {isMenuOpen && (

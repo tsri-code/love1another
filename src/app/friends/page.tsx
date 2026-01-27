@@ -728,12 +728,24 @@ export default function FriendsPage() {
                         className="flex items-center"
                         style={{ gap: "var(--space-xs)" }}
                       >
+                        {/* Hint text for unconnected friends */}
+                        {unlinkedFriendIds.has(friend.id) && (
+                          <span
+                            className="text-[var(--accent-primary)]"
+                            style={{
+                              fontSize: "var(--text-xs)",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            Connect to a profile!
+                          </span>
+                        )}
                         <span
                           className="tooltip-wrapper"
                           data-tooltip={
                             unlinkedFriendIds.has(friend.id)
-                              ? "Link to a profile"
-                              : "View linked profile"
+                              ? "Connect to a profile"
+                              : "View connected profile"
                           }
                         >
                           <button

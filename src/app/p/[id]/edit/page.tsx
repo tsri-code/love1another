@@ -142,6 +142,10 @@ export default function EditPersonPage({
   const [linkToDelete, setLinkToDelete] = useState<LinkInfo | null>(null);
   const [isDeletingLink, setIsDeletingLink] = useState(false);
 
+  // Help modals
+  const [showLinkHelp, setShowLinkHelp] = useState(false);
+  const [showConnectHelp, setShowConnectHelp] = useState(false);
+
   const router = useRouter();
   const { user } = useAuth();
   const { showToast } = useToast();
@@ -793,6 +797,33 @@ export default function EditPersonPage({
                   style={{ fontSize: "var(--text-lg)" }}
                 >
                   Linked Prayers
+                  <button
+                    type="button"
+                    onClick={() => setShowLinkHelp(true)}
+                    className="text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-colors"
+                    style={{
+                      marginLeft: "var(--space-xs)",
+                      padding: "2px",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                    }}
+                    aria-label="What are linked prayers?"
+                  >
+                    <svg
+                      style={{ width: "16px", height: "16px" }}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                  </button>
                 </h3>
                 <button
                   onClick={() => setShowCreateLink(true)}
@@ -816,8 +847,7 @@ export default function EditPersonPage({
                   marginBottom: "var(--space-md)",
                 }}
               >
-                Link {person.displayName} with another person to share a prayer
-                list together.
+                Create a shared prayer list between {person.displayName} and another person.
               </p>
 
               {links.length === 0 ? (
@@ -942,10 +972,37 @@ export default function EditPersonPage({
                 style={{ marginBottom: "var(--space-md)" }}
               >
                 <h3
-                  className="font-serif font-semibold text-[var(--text-primary)]"
+                  className="font-serif font-semibold text-[var(--text-primary)] flex items-center"
                   style={{ fontSize: "var(--text-lg)" }}
                 >
                   Connect to User
+                  <button
+                    type="button"
+                    onClick={() => setShowConnectHelp(true)}
+                    className="text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-colors"
+                    style={{
+                      marginLeft: "var(--space-xs)",
+                      padding: "2px",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                    }}
+                    aria-label="What does connecting mean?"
+                  >
+                    <svg
+                      style={{ width: "16px", height: "16px" }}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                  </button>
                 </h3>
                 {!connection && (
                   <button
@@ -1858,6 +1915,194 @@ export default function EditPersonPage({
           entityType="profile"
           entityId={id}
         />
+      )}
+
+      {/* Linked Prayers Help Modal */}
+      {showLinkHelp && (
+        <div
+          className="fixed inset-0 flex items-center justify-center animate-fade-in"
+          style={{
+            background: "rgba(0, 0, 0, 0.5)",
+            zIndex: 9999,
+            padding: "var(--space-md)",
+          }}
+          onClick={() => setShowLinkHelp(false)}
+        >
+          <div
+            className="card card-elevated animate-scale-in"
+            style={{
+              maxWidth: "400px",
+              width: "100%",
+              padding: "var(--space-xl)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              className="flex items-center"
+              style={{
+                marginBottom: "var(--space-md)",
+                gap: "var(--space-sm)",
+              }}
+            >
+              <div
+                className="flex items-center justify-center rounded-full"
+                style={{
+                  width: "40px",
+                  height: "40px",
+                  background: "var(--accent-primary-light)",
+                }}
+              >
+                <svg
+                  className="text-[var(--accent-primary)]"
+                  style={{ width: "20px", height: "20px" }}
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                </svg>
+              </div>
+              <h3
+                className="font-serif font-semibold text-[var(--text-primary)]"
+                style={{ fontSize: "var(--text-lg)" }}
+              >
+                What are Linked Prayers?
+              </h3>
+            </div>
+            <p
+              className="text-[var(--text-secondary)]"
+              style={{
+                fontSize: "var(--text-sm)",
+                lineHeight: "var(--leading-relaxed)",
+                marginBottom: "var(--space-md)",
+              }}
+            >
+              Linked prayers create a shared prayer list between two people.
+            </p>
+            <p
+              className="text-[var(--text-secondary)]"
+              style={{
+                fontSize: "var(--text-sm)",
+                lineHeight: "var(--leading-relaxed)",
+                marginBottom: "var(--space-md)",
+              }}
+            >
+              <strong>For example:</strong> Link two people who are married! That way you have their individual prayer lists AND a shared list for prayers about them together.
+            </p>
+            <p
+              className="text-[var(--text-muted)]"
+              style={{
+                fontSize: "var(--text-sm)",
+                lineHeight: "var(--leading-relaxed)",
+                marginBottom: "var(--space-lg)",
+              }}
+            >
+              You can switch between individual and linked lists by tapping the arrow next to their name.
+            </p>
+            <button
+              onClick={() => setShowLinkHelp(false)}
+              className="btn btn-primary btn-full"
+            >
+              Got it!
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Connect to User Help Modal */}
+      {showConnectHelp && (
+        <div
+          className="fixed inset-0 flex items-center justify-center animate-fade-in"
+          style={{
+            background: "rgba(0, 0, 0, 0.5)",
+            zIndex: 9999,
+            padding: "var(--space-md)",
+          }}
+          onClick={() => setShowConnectHelp(false)}
+        >
+          <div
+            className="card card-elevated animate-scale-in"
+            style={{
+              maxWidth: "400px",
+              width: "100%",
+              padding: "var(--space-xl)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              className="flex items-center"
+              style={{
+                marginBottom: "var(--space-md)",
+                gap: "var(--space-sm)",
+              }}
+            >
+              <div
+                className="flex items-center justify-center rounded-full"
+                style={{
+                  width: "40px",
+                  height: "40px",
+                  background: "var(--accent-primary-light)",
+                }}
+              >
+                <svg
+                  className="text-[var(--accent-primary)]"
+                  style={{ width: "20px", height: "20px" }}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+                  />
+                </svg>
+              </div>
+              <h3
+                className="font-serif font-semibold text-[var(--text-primary)]"
+                style={{ fontSize: "var(--text-lg)" }}
+              >
+                What is Connecting?
+              </h3>
+            </div>
+            <p
+              className="text-[var(--text-secondary)]"
+              style={{
+                fontSize: "var(--text-sm)",
+                lineHeight: "var(--leading-relaxed)",
+                marginBottom: "var(--space-md)",
+              }}
+            >
+              Connecting links this profile to a friend&apos;s Love1Another account.
+            </p>
+            <p
+              className="text-[var(--text-secondary)]"
+              style={{
+                fontSize: "var(--text-sm)",
+                lineHeight: "var(--leading-relaxed)",
+                marginBottom: "var(--space-md)",
+              }}
+            >
+              <strong>How it works:</strong> When your connected friend sends you a prayer request in a message, you can add it directly to their profile with one tap!
+            </p>
+            <p
+              className="text-[var(--text-muted)]"
+              style={{
+                fontSize: "var(--text-sm)",
+                lineHeight: "var(--leading-relaxed)",
+                marginBottom: "var(--space-lg)",
+              }}
+            >
+              This is optional - you can always add prayers manually too.
+            </p>
+            <button
+              onClick={() => setShowConnectHelp(false)}
+              className="btn btn-primary btn-full"
+            >
+              Got it!
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

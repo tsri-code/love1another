@@ -1,55 +1,61 @@
-# Love One Another - Personal Prayer List
+# Love1Another - Prayer List App
 
-A private, personal prayer-request web app where you can create people/groups, each with their own passcode-protected prayer lists. All prayer data is encrypted at rest and stored locally on your machine.
+A private, encrypted prayer list web app where you can create profiles for people you care about, track prayer requests, connect with friends, and share prayer needs through secure messaging.
 
-![Prayer List App](https://img.shields.io/badge/Next.js-15-black)
+![Next.js](https://img.shields.io/badge/Next.js-15-black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)
-![Security](https://img.shields.io/badge/Security-Encrypted-green)
+![Security](https://img.shields.io/badge/Security-E2E_Encrypted-green)
+![Supabase](https://img.shields.io/badge/Database-Supabase-3ECF8E)
 
 ## Features
 
 ### Core Functionality
-- 🙏 **Per-person prayer lists** - Each person/group has their own private prayer collection
-- 🔐 **Passcode protection** - Every prayer list requires a passcode to access
-- 🔒 **Auto-lock** - Sessions automatically lock after 5 minutes of inactivity
-- 💾 **Local storage** - All data stored locally in an encrypted SQLite database
-- 📖 **Bible verses** - Each person displays a unique verse about prayer/intercession
+- **Personal prayer profiles** - Create profiles for people you pray for
+- **Prayer request tracking** - Add, edit, pin, and mark prayers as answered
+- **Friend connections** - Connect with other users and share prayer requests
+- **Secure messaging** - Send encrypted messages and prayer requests to friends
+- **Group chats** - Create group conversations with multiple friends
+- **Daily verse** - A new Bible verse (BSB) cycles daily on the home page
+- **Profile verses** - Each profile displays a unique verse about prayer
 
-### Security
-- **Encrypted at rest** - Prayer content encrypted using AES-256-GCM
-- **Hashed passcodes** - Passcodes stored using Argon2id (never plaintext)
-- **Rate limiting** - Protection against brute-force passcode attempts
-- **Short-lived sessions** - Sessions expire after 5 minutes of inactivity
-- **No sensitive data in URLs** - Prayer content never exposed in URLs or logs
+### Privacy & Security
+- **End-to-end encryption** - All prayer content and messages are encrypted
+- **Zero-knowledge architecture** - Server cannot read your data
+- **Encrypted profiles** - Profile names and initials are encrypted
+- **Secure key management** - Recovery keys for account portability
+- **No tracking** - Your prayer life stays private
 
-### Prayer Management
-- ➕ Add new prayer requests
-- ✏️ Edit existing prayers
-- 📌 Pin important prayers to the top
-- ✅ Mark prayers as answered (moves to "Answered Prayers" section)
-- ❤️ Mark when you've prayed (tracks last prayed date)
-- 🗑️ Delete prayers
+### Social Features
+- **Friend requests** - Find and connect with other users by username
+- **Profile linking** - Link friend accounts to prayer profiles for automatic updates
+- **Prayer sharing** - Share prayers directly via messages
+- **Real-time notifications** - Get notified of new messages and friend requests
 
-### UI/UX
-- 📱 Responsive design for mobile and desktop
-- ♿ Accessible with keyboard navigation and screen reader support
-- 🎨 Warm, devotional aesthetic with calm colors and soft typography
-- ⚡ Fast and smooth animations
+### User Experience
+- **Responsive design** - Works beautifully on mobile and desktop
+- **PWA support** - Install as an app on your phone
+- **Dark/light themes** - Comfortable viewing in any environment
+- **Offline capable** - Core features work without internet
 
 ## Quick Start
 
 ### Prerequisites
-- Node.js 18+ 
-- npm or yarn
+- Node.js 18+
+- npm
+- Supabase account (for database)
 
 ### Installation
 
 ```bash
-# Clone or navigate to the project directory
+# Clone the repository
+git clone https://github.com/yourusername/love1another.git
 cd love1another
 
 # Install dependencies
 npm install
+
+# Set up environment variables (see below)
+cp .env.example .env.local
 
 # Start the development server
 npm run dev
@@ -57,131 +63,133 @@ npm run dev
 
 The app will be available at [http://localhost:3000](http://localhost:3000).
 
+### Environment Variables
+
+Create a `.env.local` file with:
+
+```bash
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+
+# Encryption
+ENCRYPTION_SECRET=your_32_byte_hex_secret
+
+# Stripe (for donations)
+STRIPE_SECRET_KEY=your_stripe_secret
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=your_stripe_publishable
+
+# Email (Brevo)
+BREVO_API_KEY=your_brevo_api_key
+```
+
 ### Production Build
 
 ```bash
-# Build for production
 npm run build
-
-# Start production server
 npm start
 ```
 
 ## How It Works
 
-### Creating a Person/Group
-1. Click the **+** button on the home page
-2. Enter a name and choose Person or Group
-3. Select an avatar color
-4. Create a passcode (minimum 6 characters)
-5. Your new prayer list is ready!
+### Creating Your Account
+1. Sign up with email or username (missionary mode)
+2. Set up your encryption keys
+3. Save your recovery phrase securely
+4. Your "ME" profile is created automatically
 
-### Adding Prayers
-1. Click on a person's avatar
-2. Enter their passcode to unlock
-3. Click "Add a prayer request"
-4. Type your prayer and press Enter to save
+### Managing Prayer Lists
+1. Create profiles for people you pray for
+2. Add prayer requests to each profile
+3. Mark prayers as answered when God responds
+4. Pin important prayers to keep them visible
 
-### Security Design
+### Connecting with Friends
+1. Search for friends by username
+2. Send friend requests
+3. Link accepted friends to prayer profiles
+4. Receive their prayer requests via messages
 
-#### Encryption Flow
-1. When you create a person, your passcode is used to:
-   - Generate a hash (for verification)
-   - Derive an encryption key (for encrypting prayer data)
-2. The encryption key is derived using Argon2id with per-person salt
-3. Prayer content is encrypted with AES-256-GCM
-4. Only the encrypted blob is stored - decryption requires the passcode
+### Messaging
+1. Open the messages panel
+2. Start a conversation with a friend
+3. Send text messages or prayer requests
+4. Add received prayers to your prayer list
 
-#### Session Management
-- Unlocking creates a server-side session (5-minute expiry)
-- Activity resets the session timer
-- Inactivity for 5 minutes triggers automatic lock
-- Sessions are invalidated on lock or tab close
+## Security Architecture
 
-#### Rate Limiting
-- After 8 failed passcode attempts, a 60-second cooldown is enforced
-- Prevents brute-force attacks on passcodes
+### Encryption Model
+- **AES-256-GCM** for all encrypted content
+- **Per-user encryption keys** derived from account
+- **Server-side encryption** for profile data
+- **Client-side decryption** for prayer content
 
-## Data Storage
+### Data Protection
+- Profile names encrypted at rest
+- Avatar initials encrypted
+- All messages end-to-end encrypted
+- Prayer content never visible to server
 
-Data is stored locally in `.prayer-data/prayers.db` in your project directory.
-
-### Backup
-- Click "Download Backup" on the home page to export your encrypted database
-- The backup file contains encrypted prayer data - safe to store externally
-- To restore, replace the database file in `.prayer-data/`
-
-### Data Location
-You can customize the data directory by setting the `DATA_DIR` environment variable:
-
-```bash
-DATA_DIR=/path/to/custom/location npm run dev
-```
+### Recovery
+- Recovery keys allow account restoration
+- Keys can be exported and stored securely
+- Password changes require recovery key re-entry
 
 ## Project Structure
 
 ```
 src/
-├── app/                    # Next.js app router pages
+├── app/                    # Next.js app router
 │   ├── api/               # API routes
-│   │   ├── people/        # People CRUD & prayers
-│   │   ├── session/       # Session management
-│   │   └── backup/        # Database export
-│   ├── add/               # Add person page
-│   └── p/[id]/            # Person pages (gate, prayers, edit)
+│   │   ├── connections/   # Friend connections
+│   │   ├── conversations/ # Group chats
+│   │   ├── friends/       # Friend requests
+│   │   ├── messages/      # Messaging
+│   │   ├── people/        # Profile management
+│   │   └── users/         # User operations
+│   ├── friends/           # Friends page
+│   ├── settings/          # User settings
+│   └── p/[id]/            # Profile pages
 ├── components/            # React components
-│   ├── AvatarCircle.tsx   # Avatar display
-│   ├── VerseCard.tsx      # Bible verse display
-│   ├── PrayerCard.tsx     # Prayer item card
-│   ├── AddPrayerComposer.tsx
-│   ├── PasscodeInput.tsx
-│   └── LockTimerBanner.tsx
+│   ├── Navbar.tsx         # Navigation
+│   ├── MessagesButton.tsx # Messaging UI
+│   ├── PrayerCard.tsx     # Prayer display
+│   └── VerseCard.tsx      # Bible verses
 └── lib/                   # Utilities
-    ├── crypto.ts          # Encryption/hashing
-    ├── db.ts              # Database operations
-    ├── session.ts         # Session management
-    └── verses.ts          # Bible verses data
+    ├── e2e-crypto.ts      # Encryption
+    ├── supabase-db.ts     # Database ops
+    ├── verses.ts          # 66 BSB verses
+    └── use-notifications.tsx
 ```
 
-## Threat Model
+## Bible Verses
 
-### Protected Against
-- Casual access by someone using your computer
-- Someone who finds the local data files (prayers are encrypted)
-- Brute-force passcode attempts (rate limited)
+The app includes 66 carefully selected Bible verses about prayer from the Berean Standard Bible (BSB), which is in the public domain. Verses are:
+- Displayed daily on the home page (same verse for all users each day)
+- Randomly assigned to new profiles
+- Focused on prayer, intercession, and God's faithfulness
 
-### Not Protected Against
-- Fully compromised OS/account (attacker with root access)
-- Physical access with debugging tools
-- Memory forensics while app is running
-
-### Recommendations
-- Use strong, memorable passcodes (phrases work well)
-- Lock the app when stepping away
-- Keep your computer secure (lock screen, encryption)
-- Back up your data regularly
-
-## Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DATA_DIR` | Custom path for database storage | `.prayer-data/` |
-| `NODE_ENV` | Environment (development/production) | `development` |
-
-## Technologies Used
+## Technologies
 
 - **Framework**: Next.js 15 (App Router)
 - **Language**: TypeScript
-- **Database**: SQLite (better-sqlite3)
-- **Encryption**: AES-256-GCM
-- **Password Hashing**: Argon2id
-- **Styling**: Tailwind CSS
-- **Fonts**: Cormorant Garamond (serif), Source Sans 3 (sans)
+- **Database**: Supabase (PostgreSQL)
+- **Auth**: Supabase Auth
+- **Encryption**: Web Crypto API + AES-256-GCM
+- **Styling**: Tailwind CSS + CSS Variables
+- **Email**: Brevo (transactional emails)
+- **Payments**: Stripe (donations)
+- **Hosting**: Vercel
+
+## Contributing
+
+This is a personal project for Christian prayer communities. If you'd like to contribute or have suggestions, please open an issue.
 
 ## License
 
-Private - for personal use.
+Private - for personal and ministry use.
 
 ---
 
-*"Bear one another's burdens, and so fulfill the law of Christ." - Galatians 6:2*
+*"Carry each other's burdens, and in this way you will fulfill the law of Christ." - Galatians 6:2 (BSB)*

@@ -39,6 +39,7 @@ export default function HomePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [openMessages, setOpenMessages] = useState(false);
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
+  const [showProfileHelp, setShowProfileHelp] = useState(false);
   const router = useRouter();
   const hasCreatedDefaultProfile = useRef(false);
 
@@ -453,6 +454,45 @@ export default function HomePage() {
                       >
                         Create Profile
                       </p>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "center",
+                          marginTop: "4px",
+                        }}
+                      >
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowProfileHelp(true);
+                          }}
+                          className="text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-colors"
+                          style={{
+                            padding: "2px",
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                          aria-label="What is a profile?"
+                        >
+                          <svg
+                            style={{ width: "14px", height: "14px" }}
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                            />
+                          </svg>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -469,6 +509,113 @@ export default function HomePage() {
         onExternalOpenHandled={handleMessagesOpened}
         onUnreadCountChange={handleUnreadCountChange}
       />
+
+      {/* Profile Help Modal */}
+      {showProfileHelp && (
+        <div
+          className="fixed inset-0 flex items-center justify-center animate-fade-in"
+          style={{
+            background: "rgba(0, 0, 0, 0.5)",
+            zIndex: 9999,
+            padding: "var(--space-md)",
+          }}
+          onClick={() => setShowProfileHelp(false)}
+        >
+          <div
+            className="card card-elevated animate-scale-in"
+            style={{
+              maxWidth: "400px",
+              width: "100%",
+              padding: "var(--space-xl)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              className="flex items-center"
+              style={{
+                marginBottom: "var(--space-md)",
+                gap: "var(--space-sm)",
+              }}
+            >
+              <div
+                className="flex items-center justify-center rounded-full"
+                style={{
+                  width: "40px",
+                  height: "40px",
+                  background: "var(--accent-primary-light)",
+                }}
+              >
+                <svg
+                  className="text-[var(--accent-primary)]"
+                  style={{ width: "20px", height: "20px" }}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                  />
+                </svg>
+              </div>
+              <h3
+                className="font-serif font-semibold text-[var(--text-primary)]"
+                style={{ fontSize: "var(--text-lg)" }}
+              >
+                What is a Profile?
+              </h3>
+            </div>
+            <p
+              className="text-[var(--text-secondary)]"
+              style={{
+                fontSize: "var(--text-sm)",
+                lineHeight: "var(--leading-relaxed)",
+                marginBottom: "var(--space-md)",
+              }}
+            >
+              A profile is for someone you want to pray for - a friend, family member, coworker, or anyone else on your heart.
+            </p>
+            <p
+              className="text-[var(--text-secondary)]"
+              style={{
+                fontSize: "var(--text-sm)",
+                lineHeight: "var(--leading-relaxed)",
+                marginBottom: "var(--space-md)",
+              }}
+            >
+              <strong>What it is:</strong> A private prayer list for that person where you can add, track, and mark prayer requests as answered.
+            </p>
+            <p
+              className="text-[var(--text-secondary)]"
+              style={{
+                fontSize: "var(--text-sm)",
+                lineHeight: "var(--leading-relaxed)",
+                marginBottom: "var(--space-md)",
+              }}
+            >
+              <strong>What it is NOT:</strong> This is not creating an account for them. Only you can see these profiles and prayers - they&apos;re completely private to you.
+            </p>
+            <p
+              className="text-[var(--text-muted)]"
+              style={{
+                fontSize: "var(--text-sm)",
+                lineHeight: "var(--leading-relaxed)",
+                marginBottom: "var(--space-lg)",
+              }}
+            >
+              If they also use Love1Another, you can optionally connect their account to receive their prayer requests via messages. If you have more questions, visit the &quot;How to Use&quot; page in the menu!
+            </p>
+            <button
+              onClick={() => setShowProfileHelp(false)}
+              className="btn btn-primary btn-full"
+            >
+              Got it!
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

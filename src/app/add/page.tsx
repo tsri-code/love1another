@@ -67,6 +67,9 @@ export default function AddPersonPage() {
   const [showFriendSelector, setShowFriendSelector] = useState(false);
   const [isLoadingFriends, setIsLoadingFriends] = useState(false);
 
+  // Help modal states
+  const [showConnectHelp, setShowConnectHelp] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const colorPickerRef = useRef<HTMLDivElement>(null);
 
@@ -535,12 +538,38 @@ export default function AddPersonPage() {
             {type === "person" && (
               <div className="form-group">
                 <div
-                  className="flex items-center justify-between"
-                  style={{ marginBottom: "var(--space-sm)" }}
+                  className="flex items-center"
+                  style={{ marginBottom: "var(--space-sm)", gap: "var(--space-xs)" }}
                 >
                   <label className="label" style={{ marginBottom: 0 }}>
                     Connect to Friend (Optional)
                   </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowConnectHelp(true)}
+                    className="text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-colors"
+                    style={{
+                      padding: "2px",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                    }}
+                    aria-label="What does connecting mean?"
+                  >
+                    <svg
+                      style={{ width: "16px", height: "16px" }}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                  </button>
                 </div>
                 <p
                   className="text-[var(--text-muted)]"
@@ -549,8 +578,8 @@ export default function AddPersonPage() {
                     marginBottom: "var(--space-sm)",
                   }}
                 >
-                  Link this profile to a friend&apos;s account so prayer
-                  requests from them are automatically added.
+                  Connect this profile to a friend&apos;s account so you can easily add their
+                  prayer requests from messages.
                 </p>
 
                 {selectedFriend ? (
@@ -826,6 +855,103 @@ export default function AddPersonPage() {
           entityType="profile"
           entityId={`new-${Date.now()}`}
         />
+      )}
+
+      {/* Connect to Friend Help Modal */}
+      {showConnectHelp && (
+        <div
+          className="fixed inset-0 flex items-center justify-center animate-fade-in"
+          style={{
+            background: "rgba(0, 0, 0, 0.5)",
+            zIndex: 9999,
+            padding: "var(--space-md)",
+          }}
+          onClick={() => setShowConnectHelp(false)}
+        >
+          <div
+            className="card card-elevated animate-scale-in"
+            style={{
+              maxWidth: "400px",
+              width: "100%",
+              padding: "var(--space-xl)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              className="flex items-center"
+              style={{
+                marginBottom: "var(--space-md)",
+                gap: "var(--space-sm)",
+              }}
+            >
+              <div
+                className="flex items-center justify-center rounded-full"
+                style={{
+                  width: "40px",
+                  height: "40px",
+                  background: "var(--accent-primary-light)",
+                }}
+              >
+                <svg
+                  className="text-[var(--accent-primary)]"
+                  style={{ width: "20px", height: "20px" }}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+                  />
+                </svg>
+              </div>
+              <h3
+                className="font-serif font-semibold text-[var(--text-primary)]"
+                style={{ fontSize: "var(--text-lg)" }}
+              >
+                What is Connecting?
+              </h3>
+            </div>
+            <p
+              className="text-[var(--text-secondary)]"
+              style={{
+                fontSize: "var(--text-sm)",
+                lineHeight: "var(--leading-relaxed)",
+                marginBottom: "var(--space-md)",
+              }}
+            >
+              When you connect a profile to a friend&apos;s account, you can easily add their prayer requests to this profile from your messages.
+            </p>
+            <p
+              className="text-[var(--text-secondary)]"
+              style={{
+                fontSize: "var(--text-sm)",
+                lineHeight: "var(--leading-relaxed)",
+                marginBottom: "var(--space-md)",
+              }}
+            >
+              <strong>How it works:</strong> When your friend sends you a prayer request in a message, you&apos;ll see an &quot;Add to prayer list&quot; button that adds it directly to their profile!
+            </p>
+            <p
+              className="text-[var(--text-muted)]"
+              style={{
+                fontSize: "var(--text-sm)",
+                lineHeight: "var(--leading-relaxed)",
+                marginBottom: "var(--space-lg)",
+              }}
+            >
+              This is optional - you can always add prayers manually too.
+            </p>
+            <button
+              onClick={() => setShowConnectHelp(false)}
+              className="btn btn-primary btn-full"
+            >
+              Got it!
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

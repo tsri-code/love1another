@@ -84,6 +84,7 @@ export default function PrayerListPage({
   // Link-related state
   const [links, setLinks] = useState<LinkInfo[]>([]);
   const [showSwitcher, setShowSwitcher] = useState(false);
+  const [showLinkHelp, setShowLinkHelp] = useState(false);
 
   // Save prayers to server (encrypted)
   const savePrayers = useCallback(
@@ -493,27 +494,40 @@ export default function PrayerListPage({
             </button>
 
             {/* Edit button */}
-            <span className="tooltip-wrapper tooltip-bottom" data-tooltip="Edit profile">
-              <button
-                onClick={() => router.push(`/p/${id}/edit`)}
-                className="icon-btn"
-                aria-label="Edit profile"
+            <button
+              onClick={() => router.push(`/p/${id}/edit`)}
+              className="flex items-center transition-colors bg-transparent hover:bg-[var(--surface-secondary)]"
+              style={{
+                height: "40px",
+                padding: "0 var(--space-sm)",
+                borderRadius: "var(--card-radius-sm)",
+                border: "none",
+                cursor: "pointer",
+                gap: "var(--space-xs)",
+              }}
+              aria-label="Edit profile"
+            >
+              <svg
+                style={{ width: "18px", height: "18px" }}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                className="text-[var(--text-primary)]"
               >
-                <svg
-                  style={{ width: "20px", height: "20px" }}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
-                  />
-                </svg>
-              </button>
-            </span>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                />
+              </svg>
+              <span
+                className="text-[var(--text-primary)] font-medium"
+                style={{ fontSize: "var(--text-sm)" }}
+              >
+                Edit
+              </span>
+            </button>
           </div>
         }
       />
@@ -562,24 +576,29 @@ export default function PrayerListPage({
                 >
                   {person.displayName}
                   {links.length > 0 && (
-                    <svg
-                      style={{
-                        width: "16px",
-                        height: "16px",
-                        transition: "transform 0.2s",
-                      }}
-                      className={showSwitcher ? "rotate-180" : ""}
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
+                    <span
+                      className="tooltip-wrapper"
+                      data-tooltip="View links"
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M19 9l-7 7-7-7"
-                      />
-                    </svg>
+                      <svg
+                        style={{
+                          width: "16px",
+                          height: "16px",
+                          transition: "transform 0.2s",
+                        }}
+                        className={showSwitcher ? "rotate-180" : ""}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 9l-7 7-7-7"
+                        />
+                      </svg>
+                    </span>
                   )}
                 </button>
 
@@ -764,13 +783,98 @@ export default function PrayerListPage({
                 )}
                 {activePrayerCount} active • {answeredPrayers.length} answered
                 {links.length > 0 && (
-                  <span
-                    className="text-[var(--accent-primary)]"
-                    style={{ marginLeft: "var(--space-xs)" }}
-                  >
-                    • {links.length} link{links.length !== 1 ? "s" : ""}
-                  </span>
+                  <>
+                    <span
+                      className="tooltip-wrapper"
+                      data-tooltip="Click the arrow to view links"
+                    >
+                      <span
+                        className="text-[var(--accent-primary)] cursor-help"
+                        style={{ marginLeft: "var(--space-xs)" }}
+                      >
+                        • {links.length} link{links.length !== 1 ? "s" : ""}
+                      </span>
+                    </span>
+                    <button
+                      onClick={() => setShowLinkHelp(true)}
+                      className="text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-colors"
+                      style={{
+                        marginLeft: "4px",
+                        padding: "2px",
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                      }}
+                      aria-label="What are links?"
+                    >
+                      <svg
+                        style={{ width: "14px", height: "14px" }}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                      </svg>
+                    </button>
+                  </>
                 )}
+              </p>
+              {/* Icon Legend - visible on first visit hint */}
+              <p
+                className="text-[var(--text-muted)] flex items-center flex-wrap"
+                style={{
+                  fontSize: "11px",
+                  marginTop: "var(--space-xs)",
+                  gap: "var(--space-sm)",
+                }}
+              >
+                <span className="flex items-center" style={{ gap: "3px" }}>
+                  <svg
+                    style={{ width: "12px", height: "12px" }}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                    />
+                  </svg>
+                  mark as prayed
+                </span>
+                <span className="flex items-center" style={{ gap: "3px" }}>
+                  <svg
+                    style={{ width: "12px", height: "12px" }}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
+                    />
+                  </svg>
+                  share via message or copy prayer
+                </span>
+                <span className="flex items-center" style={{ gap: "3px" }}>
+                  <svg
+                    style={{ width: "12px", height: "12px" }}
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                  </svg>
+                  more options for your prayers, explore!
+                </span>
               </p>
             </div>
           </section>
@@ -920,6 +1024,103 @@ export default function PrayerListPage({
           )}
         </div>
       </main>
+
+      {/* Link Help Modal */}
+      {showLinkHelp && (
+        <div
+          className="fixed inset-0 flex items-center justify-center animate-fade-in"
+          style={{
+            background: "rgba(0, 0, 0, 0.5)",
+            zIndex: 9999,
+            padding: "var(--space-md)",
+          }}
+          onClick={() => setShowLinkHelp(false)}
+        >
+          <div
+            className="card card-elevated animate-scale-in"
+            style={{
+              maxWidth: "400px",
+              width: "100%",
+              padding: "var(--space-xl)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              className="flex items-center"
+              style={{
+                marginBottom: "var(--space-md)",
+                gap: "var(--space-sm)",
+              }}
+            >
+              <div
+                className="flex items-center justify-center rounded-full"
+                style={{
+                  width: "40px",
+                  height: "40px",
+                  background: "var(--accent-primary-light)",
+                }}
+              >
+                <svg
+                  className="text-[var(--accent-primary)]"
+                  style={{ width: "20px", height: "20px" }}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+                  />
+                </svg>
+              </div>
+              <h3
+                className="font-serif font-semibold text-[var(--text-primary)]"
+                style={{ fontSize: "var(--text-lg)" }}
+              >
+                What are Links?
+              </h3>
+            </div>
+            <p
+              className="text-[var(--text-secondary)]"
+              style={{
+                fontSize: "var(--text-sm)",
+                lineHeight: "var(--leading-relaxed)",
+                marginBottom: "var(--space-md)",
+              }}
+            >
+              Links let you create a shared prayer list between two people.
+            </p>
+            <p
+              className="text-[var(--text-secondary)]"
+              style={{
+                fontSize: "var(--text-sm)",
+                lineHeight: "var(--leading-relaxed)",
+                marginBottom: "var(--space-md)",
+              }}
+            >
+              <strong>For example:</strong> Link two people who are married so you have their individual prayers AND their shared prayers together!
+            </p>
+            <p
+              className="text-[var(--text-muted)]"
+              style={{
+                fontSize: "var(--text-sm)",
+                lineHeight: "var(--leading-relaxed)",
+                marginBottom: "var(--space-lg)",
+              }}
+            >
+              Click the arrow next to the name above to switch between the individual and linked prayer lists.
+            </p>
+            <button
+              onClick={() => setShowLinkHelp(false)}
+              className="btn btn-primary btn-full"
+            >
+              Got it!
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
