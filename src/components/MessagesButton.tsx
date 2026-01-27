@@ -165,6 +165,9 @@ export function MessagesButton({
     const targetUsername = sessionStorage.getItem("openMessageToUsername");
     if (targetUsername && user?.id) {
       sessionStorage.removeItem("openMessageToUsername");
+      
+      // Strip @ prefix if present
+      const cleanedUsername = targetUsername.replace(/^@/, "");
 
       // Open the panel and search for the user
       setIsOpen(true);
@@ -174,13 +177,13 @@ export function MessagesButton({
       // Fetch the user and start conversation
       const fetchAndStartConversation = async () => {
         try {
-          const res = await fetch(`/api/users?q=${encodeURIComponent(targetUsername)}&exclude=${user.id}`);
+          const res = await fetch(`/api/users?q=${encodeURIComponent(cleanedUsername)}&exclude=${user.id}`);
           if (res.ok) {
             const data = await res.json();
             const users = data.users || [];
             // Find exact match by username
             const targetUser = users.find((u: SearchUser) =>
-              u.username?.toLowerCase() === targetUsername.toLowerCase()
+              u.username?.toLowerCase() === cleanedUsername.toLowerCase()
             );
             if (targetUser) {
               // Small delay to let UI settle
@@ -466,7 +469,10 @@ export function MessagesButton({
 
   // Search for users
   useEffect(() => {
-    if (!showSearchCompose || searchQuery.length < 2) {
+    // Strip @ prefix if present (users might search "@username")
+    const cleanedQuery = searchQuery.trim().replace(/^@/, "");
+    
+    if (!showSearchCompose || cleanedQuery.length < 2) {
       setSearchResults([]);
       return;
     }
@@ -475,7 +481,7 @@ export function MessagesButton({
       setIsSearching(true);
       try {
         const res = await fetch(
-          `/api/users?q=${encodeURIComponent(searchQuery)}&exclude=${
+          `/api/users?q=${encodeURIComponent(cleanedQuery)}&exclude=${
             user?.id || ""
           }`
         );

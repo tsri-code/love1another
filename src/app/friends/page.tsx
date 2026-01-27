@@ -252,7 +252,10 @@ export default function FriendsPage() {
   };
 
   const handleSearch = async () => {
-    if (!searchQuery.trim() || searchQuery.length < 2) {
+    // Strip @ prefix if present (users might search "@username")
+    const cleanedQuery = searchQuery.trim().replace(/^@/, "");
+    
+    if (!cleanedQuery || cleanedQuery.length < 2) {
       setSearchResults([]);
       return;
     }
@@ -261,7 +264,7 @@ export default function FriendsPage() {
     try {
       const res = await fetch(
         `/api/users?q=${encodeURIComponent(
-          searchQuery
+          cleanedQuery
         )}&exclude=${currentUserId}`
       );
       if (res.ok) {
@@ -494,7 +497,7 @@ export default function FriendsPage() {
   // Copy share link to clipboard
   const handleCopyShareLink = async () => {
     const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
-    const shareText = `Hey! Can I pray for you? Sign up on Love1Another and add me: ${user?.username || ""}`;
+    const shareText = `Hey! Can I pray for you? Sign up on Love1Another and add me: @${user?.username || ""}`;
     const shareUrl = `${baseUrl}/login?ref=${user?.username || ""}`;
 
     try {
