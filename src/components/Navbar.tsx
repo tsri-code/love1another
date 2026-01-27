@@ -176,10 +176,31 @@ export function Navbar({
             )}
           </svg>
 
-          {/* Notification Badge */}
+          {/* Notification Badge - Desktop: only friend requests, Mobile: all notifications */}
+          {/* Desktop badge (hidden on mobile) - only shows friend request count */}
+          {pendingRequestCount > 0 && (
+            <span
+              className="absolute flex items-center justify-center hide-mobile"
+              style={{
+                top: "4px",
+                right: "4px",
+                minWidth: "18px",
+                height: "18px",
+                borderRadius: "9px",
+                background: "var(--error)",
+                color: "white",
+                fontSize: "11px",
+                fontWeight: "600",
+                padding: "0 5px",
+              }}
+            >
+              {pendingRequestCount > 9 ? "9+" : pendingRequestCount}
+            </span>
+          )}
+          {/* Mobile badge (hidden on desktop) - shows all notifications */}
           {totalNotifications > 0 && (
             <span
-              className="absolute flex items-center justify-center"
+              className="absolute flex items-center justify-center show-mobile"
               style={{
                 top: "4px",
                 right: "4px",
