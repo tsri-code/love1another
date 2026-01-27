@@ -899,7 +899,7 @@ export function MessagesButton({
                     <button
                       className="icon-btn"
                       onClick={() => setShowSearchCompose(true)}
-                      title="New message"
+                      title="Create Message"
                     >
                       <svg
                         style={{ width: "20px", height: "20px" }}

@@ -125,6 +125,7 @@ export function Navbar({
             position: "relative",
           }}
           aria-label="Menu"
+          title="Menu"
         >
           {/* Hamburger Icon */}
           <svg

@@ -440,7 +440,7 @@ export default function HomePage() {
                         className="font-medium text-[var(--accent-primary)] person-name"
                         style={{ fontSize: "var(--text-sm)" }}
                       >
-                        Add
+                        Create Profile
                       </p>
                     </div>
                   </div>
