@@ -11,6 +11,44 @@ import {
   rateLimitedResponse,
   validateContent,
 } from "@/lib/api-security";
+import {
+  encryptProfileName,
+  encryptAvatarInitials,
+  parseStoredValue,
+} from "@/lib/server-crypto";
+
+/**
+ * Helper to decrypt profile display_name, handling both encrypted and legacy plaintext
+ * Uses the profile owner's user_id as context (available from the profile record)
+ */
+function decryptProfileDisplayName(storedName: string, userId: string): string {
+  return parseStoredValue(storedName, userId, "profile_name") || storedName;
+}
+
+/**
+ * Helper to encrypt profile display_name
+ * Uses the profile owner's user_id as context
+ */
+function encryptProfileDisplayName(name: string, userId: string): string {
+  const encrypted = encryptProfileName(name, userId);
+  return JSON.stringify(encrypted);
+}
+
+/**
+ * Helper to decrypt avatar initials, handling both encrypted and legacy plaintext
+ */
+function decryptProfileAvatarInitials(storedInitials: string | null, userId: string): string | null {
+  if (!storedInitials) return null;
+  return parseStoredValue(storedInitials, userId, "avatar_initials") || storedInitials;
+}
+
+/**
+ * Helper to encrypt avatar initials
+ */
+function encryptProfileAvatarInitials(initials: string, userId: string): string {
+  const encrypted = encryptAvatarInitials(initials, userId);
+  return JSON.stringify(encrypted);
+}
 
 // Prevent caching on sensitive routes
 export const dynamic = "force-dynamic";
@@ -33,24 +71,30 @@ export async function GET(request: NextRequest) {
 
     const profiles = await getAllProfiles();
 
-    // Sort by last name (last word in display_name)
-    const sortedProfiles = [...profiles].sort((a, b) => {
+    // Decrypt display names and transform to frontend format
+    const decryptedProfiles = profiles.map((p) => ({
+      ...p,
+      decryptedName: decryptProfileDisplayName(p.display_name, p.user_id),
+    }));
+
+    // Sort by last name (last word in decrypted display_name)
+    const sortedProfiles = [...decryptedProfiles].sort((a, b) => {
       const getLastName = (name: string) => {
         const parts = name.trim().split(/\s+/);
         return parts[parts.length - 1].toLowerCase();
       };
-      return getLastName(a.display_name).localeCompare(
-        getLastName(b.display_name)
+      return getLastName(a.decryptedName).localeCompare(
+        getLastName(b.decryptedName)
       );
     });
 
     // Transform to match existing frontend expectations
     const people = sortedProfiles.map((p) => ({
       id: p.id,
-      displayName: p.display_name,
+      displayName: p.decryptedName,
       type: p.type,
       avatarPath: p.avatar_path,
-      avatarInitials: p.avatar_initials,
+      avatarInitials: decryptProfileAvatarInitials(p.avatar_initials, p.user_id),
       avatarColor: p.avatar_color,
       verseId: p.verse_id,
       prayerCount: p.prayer_count,
@@ -120,25 +164,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create profile in Supabase
+    // Encrypt display name and avatar initials before storing
+    const encryptedDisplayName = encryptProfileDisplayName(displayName.trim(), user.id);
+    const plaintextInitials = avatarInitials || getInitials(displayName);
+    const encryptedInitials = encryptProfileAvatarInitials(plaintextInitials, user.id);
+
+    // Create profile in Supabase with encrypted name and initials
     const profile = await createProfile({
-      display_name: displayName.trim(),
+      display_name: encryptedDisplayName,
       type,
-      avatar_initials: avatarInitials || getInitials(displayName),
+      avatar_initials: encryptedInitials,
       avatar_color: avatarColor || generateRandomColor(),
       avatar_path: avatarPath || null,
       is_self_profile: isSelfProfile || false,
     });
 
-    // Return in format frontend expects
+    // Return in format frontend expects (with plaintext values, not encrypted)
     return NextResponse.json(
       {
         person: {
           id: profile.id,
-          displayName: profile.display_name,
+          displayName: displayName.trim(), // Return the original plaintext name
           type: profile.type,
           avatarPath: profile.avatar_path,
-          avatarInitials: profile.avatar_initials,
+          avatarInitials: plaintextInitials, // Return the original plaintext initials
           avatarColor: profile.avatar_color,
           verseId: profile.verse_id,
           prayerCount: profile.prayer_count,

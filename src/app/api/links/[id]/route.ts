@@ -6,8 +6,43 @@ import {
   getAuthenticatedUser,
 } from "@/lib/supabase-db";
 import { checkRateLimit, rateLimits, rateLimitedResponse } from "@/lib/api-security";
+import {
+  encryptLinkName,
+  parseStoredValue,
+} from "@/lib/server-crypto";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Helper to decrypt profile display_name
+ */
+function decryptProfileDisplayName(storedName: string, userId: string): string {
+  return parseStoredValue(storedName, userId, "profile_name") || storedName;
+}
+
+/**
+ * Helper to decrypt link name
+ */
+function decryptLinkDisplayName(storedName: string | null, userId: string): string {
+  if (!storedName) return "Link";
+  return parseStoredValue(storedName, userId, "link_name") || storedName;
+}
+
+/**
+ * Helper to encrypt link name
+ */
+function encryptLinkDisplayName(name: string, userId: string): string {
+  const encrypted = encryptLinkName(name, userId);
+  return JSON.stringify(encrypted);
+}
+
+/**
+ * Helper to decrypt avatar initials
+ */
+function decryptProfileAvatarInitials(storedInitials: string | null, userId: string): string | null {
+  if (!storedInitials) return null;
+  return parseStoredValue(storedInitials, userId, "avatar_initials") || storedInitials;
+}
 
 /**
  * GET /api/links/[id] - Get a link by ID
@@ -38,12 +73,12 @@ export async function GET(
     return NextResponse.json({
       link: {
         id: link.id,
-        displayName: link.link_name,
+        displayName: decryptLinkDisplayName(link.link_name, user.id),
         person1: link.profile1
           ? {
               id: link.profile1.id,
-              displayName: link.profile1.display_name,
-              avatarInitials: link.profile1.avatar_initials,
+              displayName: decryptProfileDisplayName(link.profile1.display_name, link.profile1.user_id),
+              avatarInitials: decryptProfileAvatarInitials(link.profile1.avatar_initials, link.profile1.user_id),
               avatarColor: link.profile1.avatar_color,
               avatarPath: link.profile1.avatar_path,
             }
@@ -51,8 +86,8 @@ export async function GET(
         person2: link.profile2
           ? {
               id: link.profile2.id,
-              displayName: link.profile2.display_name,
-              avatarInitials: link.profile2.avatar_initials,
+              displayName: decryptProfileDisplayName(link.profile2.display_name, link.profile2.user_id),
+              avatarInitials: decryptProfileAvatarInitials(link.profile2.avatar_initials, link.profile2.user_id),
               avatarColor: link.profile2.avatar_color,
               avatarPath: link.profile2.avatar_path,
             }
@@ -98,14 +133,17 @@ export async function PUT(
       return NextResponse.json({ error: "Link not found" }, { status: 404 });
     }
 
+    // Encrypt the link name if provided
+    const encryptedLinkName = linkName ? encryptLinkDisplayName(linkName, user.id) : undefined;
+
     const updatedLink = await updateLink(id, {
-      link_name: linkName,
+      link_name: encryptedLinkName,
     });
 
     return NextResponse.json({
       link: {
         id: updatedLink.id,
-        displayName: updatedLink.link_name,
+        displayName: linkName || decryptLinkDisplayName(updatedLink.link_name, user.id),
         prayerCount: updatedLink.prayer_count,
         updatedAt: updatedLink.updated_at,
       },

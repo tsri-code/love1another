@@ -11,8 +11,52 @@ import {
   rateLimits,
   rateLimitedResponse,
 } from "@/lib/api-security";
+import {
+  encryptProfileName,
+  encryptAvatarInitials,
+  parseStoredValue,
+} from "@/lib/server-crypto";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Helper to decrypt profile display_name, handling both encrypted and legacy plaintext
+ */
+function decryptProfileDisplayName(storedName: string, userId: string): string {
+  return parseStoredValue(storedName, userId, "profile_name") || storedName;
+}
+
+/**
+ * Helper to encrypt profile display_name
+ */
+function encryptProfileDisplayName(name: string, userId: string): string {
+  const encrypted = encryptProfileName(name, userId);
+  return JSON.stringify(encrypted);
+}
+
+/**
+ * Helper to decrypt avatar initials, handling both encrypted and legacy plaintext
+ */
+function decryptProfileAvatarInitials(storedInitials: string | null, userId: string): string | null {
+  if (!storedInitials) return null;
+  return parseStoredValue(storedInitials, userId, "avatar_initials") || storedInitials;
+}
+
+/**
+ * Helper to encrypt avatar initials
+ */
+function encryptProfileAvatarInitials(initials: string, userId: string): string {
+  const encrypted = encryptAvatarInitials(initials, userId);
+  return JSON.stringify(encrypted);
+}
+
+/**
+ * Helper to decrypt link name
+ */
+function decryptLinkDisplayName(storedName: string | null, userId: string): string {
+  if (!storedName) return "Link";
+  return parseStoredValue(storedName, userId, "link_name") || storedName;
+}
 
 /**
  * GET /api/people/[id] - Get person public info with their links
@@ -42,13 +86,16 @@ export async function GET(
       return NextResponse.json({ error: "Person not found" }, { status: 404 });
     }
 
+    // Decrypt display name
+    const decryptedName = decryptProfileDisplayName(profile.display_name, profile.user_id);
+
     // Transform to match frontend expectations
     const person = {
       id: profile.id,
-      displayName: profile.display_name,
+      displayName: decryptedName,
       type: profile.type,
       avatarPath: profile.avatar_path,
-      avatarInitials: profile.avatar_initials,
+      avatarInitials: decryptProfileAvatarInitials(profile.avatar_initials, profile.user_id),
       avatarColor: profile.avatar_color,
       verseId: profile.verse_id,
       prayerCount: profile.prayer_count,
@@ -59,20 +106,20 @@ export async function GET(
     const allLinks = await getLinksForProfile(id);
     const links = allLinks.map((link) => ({
       id: link.id,
-      displayName: link.link_name || "Link",
+      displayName: decryptLinkDisplayName(link.link_name, user.id),
       person1: link.profile1
         ? {
             id: link.profile1.id,
-            displayName: link.profile1.display_name,
-            avatarInitials: link.profile1.avatar_initials,
+            displayName: decryptProfileDisplayName(link.profile1.display_name, link.profile1.user_id),
+            avatarInitials: decryptProfileAvatarInitials(link.profile1.avatar_initials, link.profile1.user_id),
             avatarColor: link.profile1.avatar_color,
           }
         : null,
       person2: link.profile2
         ? {
             id: link.profile2.id,
-            displayName: link.profile2.display_name,
-            avatarInitials: link.profile2.avatar_initials,
+            displayName: decryptProfileDisplayName(link.profile2.display_name, link.profile2.user_id),
+            avatarInitials: decryptProfileAvatarInitials(link.profile2.avatar_initials, link.profile2.user_id),
             avatarColor: link.profile2.avatar_color,
           }
         : null,
@@ -130,23 +177,31 @@ export async function PUT(
       );
     }
 
-    // Build update data
+    // Store original plaintext for response
+    const plaintextDisplayName = displayName?.trim();
+    const plaintextInitials = avatarInitials;
+
+    // Build update data with encrypted display name and initials
     const updateData: Record<string, unknown> = {};
-    if (displayName?.trim()) updateData.display_name = displayName.trim();
+    if (plaintextDisplayName) {
+      updateData.display_name = encryptProfileDisplayName(plaintextDisplayName, existingProfile.user_id);
+    }
     if (type) updateData.type = type;
-    if (avatarInitials) updateData.avatar_initials = avatarInitials;
+    if (plaintextInitials) {
+      updateData.avatar_initials = encryptProfileAvatarInitials(plaintextInitials, existingProfile.user_id);
+    }
     if (avatarColor) updateData.avatar_color = avatarColor;
     if (avatarPath !== undefined) updateData.avatar_path = avatarPath;
 
     const updatedProfile = await updateProfile(id, updateData);
 
-    // Transform to match frontend expectations
+    // Transform to match frontend expectations (with decrypted values)
     const person = {
       id: updatedProfile.id,
-      displayName: updatedProfile.display_name,
+      displayName: plaintextDisplayName || decryptProfileDisplayName(updatedProfile.display_name, updatedProfile.user_id),
       type: updatedProfile.type,
       avatarPath: updatedProfile.avatar_path,
-      avatarInitials: updatedProfile.avatar_initials,
+      avatarInitials: plaintextInitials || decryptProfileAvatarInitials(updatedProfile.avatar_initials, updatedProfile.user_id),
       avatarColor: updatedProfile.avatar_color,
       verseId: updatedProfile.verse_id,
       prayerCount: updatedProfile.prayer_count,
@@ -157,20 +212,20 @@ export async function PUT(
     const allLinks = await getLinksForProfile(id);
     const links = allLinks.map((link) => ({
       id: link.id,
-      displayName: link.link_name || "Link",
+      displayName: decryptLinkDisplayName(link.link_name, user.id),
       person1: link.profile1
         ? {
             id: link.profile1.id,
-            displayName: link.profile1.display_name,
-            avatarInitials: link.profile1.avatar_initials,
+            displayName: decryptProfileDisplayName(link.profile1.display_name, link.profile1.user_id),
+            avatarInitials: decryptProfileAvatarInitials(link.profile1.avatar_initials, link.profile1.user_id),
             avatarColor: link.profile1.avatar_color,
           }
         : null,
       person2: link.profile2
         ? {
             id: link.profile2.id,
-            displayName: link.profile2.display_name,
-            avatarInitials: link.profile2.avatar_initials,
+            displayName: decryptProfileDisplayName(link.profile2.display_name, link.profile2.user_id),
+            avatarInitials: decryptProfileAvatarInitials(link.profile2.avatar_initials, link.profile2.user_id),
             avatarColor: link.profile2.avatar_color,
           }
         : null,

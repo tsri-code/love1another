@@ -7,8 +7,25 @@ import {
   rateLimitedResponse,
 } from "@/lib/api-security";
 import { getInitials } from "@/lib/utils";
+import { encryptProfileName, encryptAvatarInitials } from "@/lib/server-crypto";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Helper to encrypt profile display_name
+ */
+function encryptProfileDisplayName(name: string, userId: string): string {
+  const encrypted = encryptProfileName(name, userId);
+  return JSON.stringify(encrypted);
+}
+
+/**
+ * Helper to encrypt avatar initials
+ */
+function encryptProfileAvatarInitials(initials: string, userId: string): string {
+  const encrypted = encryptAvatarInitials(initials, userId);
+  return JSON.stringify(encrypted);
+}
 
 /**
  * GET /api/users/me - Get current user's info
@@ -149,8 +166,10 @@ export async function PATCH(request: NextRequest) {
         const profileUpdate: Record<string, string | null | undefined> = {};
         
         if (updateData.full_name) {
-          profileUpdate.display_name = updateData.full_name;
-          profileUpdate.avatar_initials = getInitials(updateData.full_name);
+          // Encrypt the display name and avatar initials before storing
+          profileUpdate.display_name = encryptProfileDisplayName(updateData.full_name, user.id);
+          const initials = getInitials(updateData.full_name);
+          profileUpdate.avatar_initials = encryptProfileAvatarInitials(initials, user.id);
         }
         if (updateData.avatar_path !== undefined) {
           profileUpdate.avatar_path = updateData.avatar_path;

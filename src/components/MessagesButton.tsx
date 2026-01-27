@@ -293,7 +293,7 @@ export function MessagesButton({
                       senderId: msg.senderId,
                       senderName:
                         msg.senderId === user.id ? "You" : participantName,
-                      content: msg.encryptedContent || "[Encrypted message]",
+                      content: msg.content || "[Encrypted message]",
                       type: msg.type || "message",
                       timestamp: msg.createdAt,
                       isRead: msg.isRead,
@@ -354,7 +354,7 @@ export function MessagesButton({
                     id: msg.id,
                     senderId: msg.senderId,
                     senderName: msg.senderId === user.id ? "You" : "Member",
-                    content: msg.encryptedContent || "[Encrypted message]",
+                    content: msg.content || "[Encrypted message]",
                     type: msg.type || "message",
                     timestamp: msg.createdAt,
                     isRead: msg.isRead,
@@ -1982,7 +1982,7 @@ function ThreadView({
         (msg: {
           id: string;
           senderId: string;
-          encryptedContent: string;
+          content: string;
           type: string;
           createdAt: string;
           isRead: boolean;
@@ -2003,7 +2003,7 @@ function ThreadView({
           senderAvatar: msg.sender?.avatarPath || undefined,
           senderColor: msg.sender?.avatarColor || undefined,
           senderInitials: msg.sender?.avatarInitials || undefined,
-          content: msg.encryptedContent || "[Encrypted message]", // Would decrypt in production
+          content: msg.content || "[Encrypted message]",
           type: msg.type || "message",
           timestamp: msg.createdAt,
           isRead: msg.isRead,
@@ -2107,13 +2107,12 @@ function ThreadView({
     setMessageType("message");
 
     try {
-      // For now, send unencrypted (would encrypt in production)
+      // Send message content - server handles encryption
       const res = await fetch(`/api/messages/${thread.id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          encryptedContent: content, // Would be encrypted
-          iv: "placeholder-iv", // Would be real IV
+          content: content,
           type: type,
         }),
       });

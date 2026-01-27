@@ -12,8 +12,33 @@ import {
   rateLimits,
   rateLimitedResponse,
 } from "@/lib/api-security";
+import {
+  encryptMessage as encryptMsg,
+  decryptMessage as decryptMsg,
+  isEncryptedPayload,
+} from "@/lib/server-crypto";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Helper to decrypt message content, handling both encrypted and legacy plaintext
+ */
+function decryptMessageContent(encryptedContent: string, conversationId: string): string {
+  if (!encryptedContent) return "";
+  
+  // Try to parse as encrypted payload
+  try {
+    const parsed = JSON.parse(encryptedContent);
+    if (isEncryptedPayload(parsed)) {
+      return decryptMsg(parsed, conversationId);
+    }
+  } catch {
+    // Not JSON, treat as legacy plaintext
+  }
+  
+  // Return as-is (legacy plaintext data)
+  return encryptedContent;
+}
 
 /**
  * GET /api/messages/[conversationId] - Get messages in a conversation
@@ -55,8 +80,8 @@ export async function GET(
         messages: messages.map((m) => ({
           id: m.id,
           senderId: m.sender_id,
-          encryptedContent: m.encrypted_content,
-          iv: m.iv,
+          // Decrypt content server-side (handles both encrypted and legacy plaintext)
+          content: decryptMessageContent(m.encrypted_content, conversationId),
           type: m.message_type,
           isRead: m.is_read,
           createdAt: m.created_at,
@@ -78,8 +103,8 @@ export async function GET(
       messages: messages.map((m) => ({
         id: m.id,
         senderId: m.sender_id,
-        encryptedContent: m.encrypted_content,
-        iv: m.iv,
+        // Decrypt content server-side (handles both encrypted and legacy plaintext)
+        content: decryptMessageContent(m.encrypted_content, conversationId),
         type: m.message_type,
         isRead: m.is_read,
         createdAt: m.created_at,
@@ -117,11 +142,26 @@ export async function POST(
     const { conversationId } = await params;
 
     const body = await request.json();
-    const { encryptedContent, iv, type = "message" } = body;
+    // Accept either new format (content) or legacy format (encryptedContent + iv)
+    const { content, encryptedContent, iv, type = "message" } = body;
 
-    if (!encryptedContent || !iv) {
+    // Determine content and encrypt if needed
+    let finalEncryptedContent: string;
+    let finalIv: string;
+
+    if (content) {
+      // New format: plaintext content, encrypt server-side
+      const encrypted = encryptMsg(content, conversationId);
+      finalEncryptedContent = JSON.stringify(encrypted);
+      finalIv = encrypted.iv; // Store IV separately for potential future use
+    } else if (encryptedContent && iv) {
+      // Legacy format: already encrypted (or was passed as plaintext with placeholder IV)
+      // For backward compatibility, store as-is
+      finalEncryptedContent = encryptedContent;
+      finalIv = iv;
+    } else {
       return NextResponse.json(
-        { error: "Encrypted content and IV are required" },
+        { error: "Message content is required" },
         { status: 400 }
       );
     }
@@ -130,8 +170,8 @@ export async function POST(
     const message = await sendMessage({
       conversation_id: conversationId,
       sender_id: user.id,
-      encrypted_content: encryptedContent,
-      iv,
+      encrypted_content: finalEncryptedContent,
+      iv: finalIv,
       message_type: type,
     });
 
