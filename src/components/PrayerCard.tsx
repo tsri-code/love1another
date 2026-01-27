@@ -343,15 +343,17 @@ export function PrayerCard({
             </div>
 
             <div className="relative" ref={menuRef}>
-              <button
-                onClick={() => setShowMenu(!showMenu)}
-                className="icon-btn"
-                aria-label="Prayer actions"
-              >
-                <svg style={{ width: '18px', height: '18px' }} fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-                </svg>
-              </button>
+              <span className="tooltip-wrapper" data-tooltip="Options">
+                <button
+                  onClick={() => setShowMenu(!showMenu)}
+                  className="icon-btn"
+                  aria-label="Prayer actions"
+                >
+                  <svg style={{ width: '18px', height: '18px' }} fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                  </svg>
+                </button>
+              </span>
 
               {showMenu && (
                 <div

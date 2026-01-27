@@ -1691,6 +1691,15 @@ export default function EditPersonPage({
                 </strong>{" "}
                 and all their prayer requests. This cannot be undone.
               </p>
+              <p
+                className="text-[var(--text-muted)]"
+                style={{
+                  fontSize: "var(--text-sm)",
+                  marginTop: "var(--space-sm)",
+                }}
+              >
+                But don&apos;t worry! You can always make another one :)
+              </p>
             </div>
 
             <div style={{ marginBottom: "var(--space-lg)" }}>

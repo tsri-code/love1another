@@ -191,6 +191,7 @@ export async function createProfile(data: {
   avatar_color?: string;
   avatar_path?: string | null;
   is_self_profile?: boolean;
+  verse_id?: number;
 }): Promise<Profile> {
   const supabase = await createServerSupabaseClient();
   const user = await getAuthenticatedUser();
@@ -210,6 +211,7 @@ export async function createProfile(data: {
       avatar_path: data.avatar_path || null,
       prayer_count: 0,
       is_self_profile: data.is_self_profile || false,
+      verse_id: data.verse_id || null,
     })
     .select()
     .single();

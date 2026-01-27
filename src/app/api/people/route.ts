@@ -16,6 +16,8 @@ import {
   encryptAvatarInitials,
   parseStoredValue,
 } from "@/lib/server-crypto";
+import { PRAYER_VERSES } from "@/lib/verses";
+import { randomInt } from "crypto";
 
 /**
  * Helper to decrypt profile display_name, handling both encrypted and legacy plaintext
@@ -169,6 +171,10 @@ export async function POST(request: NextRequest) {
     const plaintextInitials = avatarInitials || getInitials(displayName);
     const encryptedInitials = encryptProfileAvatarInitials(plaintextInitials, user.id);
 
+    // Generate a truly random verse ID for the profile using crypto
+    // This ensures unpredictable distribution across all verses
+    const randomVerseId = randomInt(1, PRAYER_VERSES.length + 1);
+
     // Create profile in Supabase with encrypted name and initials
     const profile = await createProfile({
       display_name: encryptedDisplayName,
@@ -177,6 +183,7 @@ export async function POST(request: NextRequest) {
       avatar_color: avatarColor || generateRandomColor(),
       avatar_path: avatarPath || null,
       is_self_profile: isSelfProfile || false,
+      verse_id: randomVerseId,
     });
 
     // Return in format frontend expects (with plaintext values, not encrypted)

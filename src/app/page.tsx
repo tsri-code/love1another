@@ -9,6 +9,17 @@ import { MessagesButton } from "@/components/MessagesButton";
 import { LandingPage } from "@/components/LandingPage";
 import { useAuth } from "@/components/AuthGuard";
 import { formatDistanceToNow } from "date-fns";
+import { PRAYER_VERSES } from "@/lib/verses";
+
+// Get a daily verse ID that's the same for all users on the same day
+function getDailyVerseId(): number {
+  const today = new Date();
+  const dayOfYear = Math.floor(
+    (today.getTime() - new Date(today.getFullYear(), 0, 0).getTime()) / (1000 * 60 * 60 * 24)
+  );
+  // Cycle through verses based on day of year
+  return (dayOfYear % PRAYER_VERSES.length) + 1;
+}
 
 interface Person {
   id: string;
@@ -224,7 +235,7 @@ export default function HomePage() {
                 className="animate-fade-in stagger-1"
                 style={{ paddingBottom: "var(--space-xl)" }}
               >
-                <VerseCard verseId={1} />
+                <VerseCard verseId={getDailyVerseId()} />
               </section>
 
               {/* Empty State Card */}
@@ -313,7 +324,7 @@ export default function HomePage() {
                 className="animate-fade-in stagger-1"
                 style={{ paddingBottom: "var(--space-xl)" }}
               >
-                <VerseCard verseId={(people[0]?.verseId || 0) + 1 || 5} />
+                <VerseCard verseId={getDailyVerseId()} />
               </section>
 
               {/* People Grid */}

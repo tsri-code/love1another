@@ -225,7 +225,7 @@ export default function AddPersonPage() {
       <AppHeader
         showBack
         backHref="/"
-        title={`Add ${type === "person" ? "Person" : "Group"}`}
+        title={`${type === "person" ? "Create a new profile" : "Add Group"}`}
         subtitle="Create a new prayer list"
       />
 
@@ -693,7 +693,7 @@ export default function AddPersonPage() {
                         d="M12 4v16m8-8H4"
                       />
                     </svg>
-                    Create {type === "person" ? "Person" : "Group"}
+                    Create {type === "person" ? "Profile" : "Group"}
                   </>
                 )}
               </button>
