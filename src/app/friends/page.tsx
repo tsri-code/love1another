@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { AppHeader } from "@/components/AppHeader";
 import { useAuth } from "@/components/AuthGuard";
+import { useNotifications } from "@/lib/use-notifications";
 import { useToast } from "@/lib/toast";
 import { getInitials } from "@/lib/utils";
 
@@ -107,6 +108,7 @@ export default function FriendsPage() {
 
   const { user } = useAuth();
   const { showToast } = useToast();
+  const { refreshCounts, markFriendRequestsRead } = useNotifications();
 
   const currentUserId = user?.id || null;
 
@@ -129,7 +131,9 @@ export default function FriendsPage() {
   useEffect(() => {
     if (!currentUserId) return;
     fetchFriendsData();
-  }, [currentUserId]);
+    // Sync notification counts when page loads
+    refreshCounts();
+  }, [currentUserId, refreshCounts]);
 
   const fetchFriendsData = async () => {
     if (!currentUserId) return;
@@ -453,6 +457,9 @@ export default function FriendsPage() {
       }
 
       fetchFriendsData();
+      
+      // Mark friend request notifications as read and refresh counts
+      markFriendRequestsRead();
     } catch (error) {
       console.error("Error responding to request:", error);
       showToast("Failed to respond to request", "error");

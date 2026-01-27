@@ -29,6 +29,7 @@ interface NotificationContextType {
   refreshCounts: () => Promise<void>;
   markAllRead: () => Promise<void>;
   markConversationRead: (conversationId: string) => Promise<void>;
+  markFriendRequestsRead: () => Promise<void>;
   playMessageSound: () => void;
   playFriendRequestSound: () => void;
   // Sound settings
@@ -44,6 +45,7 @@ const NotificationContext = createContext<NotificationContextType>({
   refreshCounts: async () => {},
   markAllRead: async () => {},
   markConversationRead: async () => {},
+  markFriendRequestsRead: async () => {},
   playMessageSound: () => {},
   playFriendRequestSound: () => {},
   messageSoundEnabled: true,
@@ -218,6 +220,28 @@ export function NotificationProvider({
     }
   }, [userId]);
 
+  // Mark all friend request notifications as read
+  const markFriendRequestsRead = useCallback(async () => {
+    if (!userId) return;
+
+    try {
+      const supabase = createClient();
+
+      // Mark all friend_request notifications as read
+      await supabase
+        .from("notification_events")
+        .update({ read: true })
+        .eq("user_id", userId)
+        .eq("type", "friend_request")
+        .eq("read", false);
+
+      // Reset the count
+      setPendingFriendRequests(0);
+    } catch {
+      // Silent fail - will sync on next refresh
+    }
+  }, [userId]);
+
   // Initial fetch
   useEffect(() => {
     if (userId) {
@@ -302,6 +326,7 @@ export function NotificationProvider({
         refreshCounts,
         markAllRead,
         markConversationRead,
+        markFriendRequestsRead,
         playMessageSound,
         playFriendRequestSound,
         messageSoundEnabled,
