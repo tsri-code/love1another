@@ -7,6 +7,7 @@ import { VerseCard } from "@/components/VerseCard";
 import { PrayerCard } from "@/components/PrayerCard";
 import { AddPrayerComposer } from "@/components/AddPrayerComposer";
 import { AppHeader } from "@/components/AppHeader";
+import { Navbar } from "@/components/Navbar";
 import { useToast } from "@/lib/toast";
 import { useCrypto } from "@/lib/use-crypto";
 import { useAuth } from "@/components/AuthGuard";
@@ -463,6 +464,7 @@ export default function PrayerListPage({
 
   return (
     <div className="page">
+      <Navbar />
       <AppHeader
         showBack
         backHref="/"
@@ -470,66 +472,6 @@ export default function PrayerListPage({
         subtitle={`${activePrayerCount} active prayer${
           activePrayerCount !== 1 ? "s" : ""
         }${isSaving ? " • Saving..." : ""}`}
-        actions={
-          <div className="flex items-center" style={{ gap: "var(--space-xs)" }}>
-            {/* Home button */}
-            <button
-              onClick={() => router.push("/")}
-              className="btn btn-secondary btn-sm"
-            >
-              <svg
-                style={{ width: "16px", height: "16px" }}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
-                />
-              </svg>
-              Home
-            </button>
-
-            {/* Edit button */}
-            <button
-              onClick={() => router.push(`/p/${id}/edit`)}
-              className="flex items-center transition-colors bg-transparent hover:bg-[var(--surface-secondary)]"
-              style={{
-                height: "40px",
-                padding: "0 var(--space-sm)",
-                borderRadius: "var(--card-radius-sm)",
-                border: "none",
-                cursor: "pointer",
-                gap: "var(--space-xs)",
-              }}
-              aria-label="Edit profile"
-            >
-              <svg
-                style={{ width: "18px", height: "18px" }}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                className="text-[var(--text-primary)]"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
-                />
-              </svg>
-              <span
-                className="text-[var(--text-primary)] font-medium"
-                style={{ fontSize: "var(--text-sm)" }}
-              >
-                Edit
-              </span>
-            </button>
-          </div>
-        }
       />
 
       <main className="flex-1">
@@ -543,35 +485,69 @@ export default function PrayerListPage({
         >
           {/* Person header with profile switcher */}
           <section
-            className="card flex items-center animate-fade-in"
+            className="card animate-fade-in"
             style={{
-              gap: "var(--space-md)",
               marginBottom: "var(--space-lg)",
               position: "relative",
               zIndex: showSwitcher ? 100 : "auto",
             }}
           >
-            <AvatarCircle
-              name={person.displayName}
-              initials={person.avatarInitials || undefined}
-              color={person.avatarColor || undefined}
-              imagePath={person.avatarPath || undefined}
-              size="md"
-              interactive={false}
-            />
-            <div className="flex-1 min-w-0">
+            {/* Edit button in top right */}
+            <button
+              onClick={() => router.push(`/p/${id}/edit`)}
+              className="btn btn-ghost edit-btn-xs"
+              style={{
+                position: "absolute",
+                top: "var(--space-xs)",
+                right: "var(--space-xs)",
+                zIndex: 10,
+                height: "32px",
+                padding: "0 var(--space-sm)",
+                fontSize: "var(--text-xs)",
+              }}
+              aria-label="Edit profile"
+            >
+              <svg
+                style={{ width: "14px", height: "14px" }}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                />
+              </svg>
+              Edit
+            </button>
+
+            <div
+              className="flex items-center"
+              style={{ gap: "var(--space-md)", paddingRight: "55px" }}
+            >
+              <AvatarCircle
+                name={person.displayName}
+                initials={person.avatarInitials || undefined}
+                color={person.avatarColor || undefined}
+                imagePath={person.avatarPath || undefined}
+                size="md"
+                interactive={false}
+              />
+              <div className="flex-1 min-w-0">
               {/* Profile name with link switcher */}
               <div className="relative" ref={switcherRef}>
                 <button
                   onClick={() =>
                     links.length > 0 && setShowSwitcher(!showSwitcher)
                   }
-                  className={`font-serif font-semibold text-[var(--text-primary)] flex items-center transition-colors ${
+                  className={`font-serif font-semibold text-[var(--text-primary)] transition-colors ${
                     links.length > 0
                       ? "hover:text-[var(--accent-primary)] cursor-pointer"
                       : ""
                   }`}
-                  style={{ fontSize: "var(--text-lg)", gap: "var(--space-xs)" }}
+                  style={{ fontSize: "var(--text-lg)" }}
                   disabled={links.length === 0}
                 >
                   {person.displayName}
@@ -579,6 +555,12 @@ export default function PrayerListPage({
                     <span
                       className="tooltip-wrapper"
                       data-tooltip="View links"
+                      style={{ 
+                        display: "inline-flex",
+                        alignItems: "center",
+                        marginLeft: "4px",
+                        verticalAlign: "middle",
+                      }}
                     >
                       <svg
                         style={{
@@ -758,17 +740,19 @@ export default function PrayerListPage({
                 )}
               </div>
 
+              {/* Stats line */}
               <p
                 className="text-[var(--text-muted)] flex items-center"
                 style={{
                   fontSize: "var(--text-sm)",
                   gap: "6px",
                   marginTop: "2px",
+                  whiteSpace: "nowrap",
                 }}
               >
                 {person.type === "group" && (
                   <svg
-                    style={{ width: "14px", height: "14px" }}
+                    style={{ width: "14px", height: "14px", flexShrink: 0 }}
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -782,48 +766,52 @@ export default function PrayerListPage({
                   </svg>
                 )}
                 {activePrayerCount} active • {answeredPrayers.length} answered
-                {links.length > 0 && (
-                  <>
-                    <span
-                      className="tooltip-wrapper"
-                      data-tooltip="Click the arrow to view links"
-                    >
-                      <span
-                        className="text-[var(--accent-primary)] cursor-help"
-                        style={{ marginLeft: "var(--space-xs)" }}
-                      >
-                        • {links.length} link{links.length !== 1 ? "s" : ""}
-                      </span>
-                    </span>
-                    <button
-                      onClick={() => setShowLinkHelp(true)}
-                      className="text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-colors"
-                      style={{
-                        marginLeft: "4px",
-                        padding: "2px",
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                      }}
-                      aria-label="What are links?"
-                    >
-                      <svg
-                        style={{ width: "14px", height: "14px" }}
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                        />
-                      </svg>
-                    </button>
-                  </>
-                )}
               </p>
+              {/* Links line (separate row for small screens) */}
+              {links.length > 0 && (
+                <p
+                  className="text-[var(--text-muted)] flex items-center"
+                  style={{
+                    fontSize: "var(--text-sm)",
+                    gap: "4px",
+                    marginTop: "2px",
+                  }}
+                >
+                  <span
+                    className="tooltip-wrapper"
+                    data-tooltip="Click the arrow to view links"
+                  >
+                    <span className="text-[var(--accent-primary)] cursor-help">
+                      {links.length} link{links.length !== 1 ? "s" : ""}
+                    </span>
+                  </span>
+                  <button
+                    onClick={() => setShowLinkHelp(true)}
+                    className="text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-colors"
+                    style={{
+                      padding: "2px",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                    }}
+                    aria-label="What are links?"
+                  >
+                    <svg
+                      style={{ width: "14px", height: "14px" }}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                  </button>
+                </p>
+              )}
               {/* Icon Legend - visible on first visit hint */}
               <p
                 className="text-[var(--text-muted)] flex items-center flex-wrap"
@@ -876,6 +864,7 @@ export default function PrayerListPage({
                   more options for your prayers, explore!
                 </span>
               </p>
+              </div>
             </div>
           </section>
 

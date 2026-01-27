@@ -976,25 +976,36 @@ export default function SettingsPage() {
                   >
                     Encryption & Recovery
                   </h2>
-                  <span className="tooltip-wrapper" data-tooltip="What does this mean?">
-                    <button
-                      onClick={() => setShowRecoveryInfoModal(true)}
-                      className="pulse-glow-icon flex items-center justify-center w-8 h-8 rounded-full"
-                      style={{
-                        backgroundColor: "rgba(239, 68, 68, 0.2)",
-                        border: "2px solid rgba(239, 68, 68, 0.4)",
-                      }}
-                      aria-label="Learn about recovery codes"
+                  <button
+                    onClick={() => setShowRecoveryInfoModal(true)}
+                    className="pulse-glow-icon flex items-center rounded-full"
+                    style={{
+                      backgroundColor: "rgba(239, 68, 68, 0.2)",
+                      border: "2px solid rgba(239, 68, 68, 0.4)",
+                      padding: "4px 12px 4px 8px",
+                      gap: "6px",
+                      cursor: "pointer",
+                    }}
+                    aria-label="Learn about recovery codes"
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      fill="#ef4444"
+                      viewBox="0 0 24 24"
                     >
-                      <svg
-                        className="w-4 h-4"
-                        fill="#ef4444"
-                        viewBox="0 0 24 24"
-                      >
-                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-                      </svg>
-                    </button>
-                  </span>
+                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                    </svg>
+                    <span
+                      style={{
+                        fontSize: "12px",
+                        fontWeight: 500,
+                        color: "#ef4444",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Click me to learn more
+                    </span>
+                  </button>
                 </div>
               </div>
 
@@ -1826,13 +1837,12 @@ export default function SettingsPage() {
                         <span>⚠️</span> After Resetting Your Password
                       </h4>
                       <p style={{ fontSize: "14px", color: "var(--text-secondary)", lineHeight: 1.7, marginBottom: "12px" }}>
-                        If you reset your password (forgot it and created a new one), your encrypted content will appear locked.
-                        To unlock it:
+                        If you reset your password (forgot it and created a new one or reset it), your encrypted content (prayers, profiles, messages) will appear scrambled, because it&apos;s still locked. To unlock it:
                       </p>
                       <ol style={{ fontSize: "14px", color: "var(--text-primary)", paddingLeft: "20px", lineHeight: 2, fontWeight: 500 }}>
                         <li>Come back to <strong>Settings</strong></li>
                         <li>Click <strong>&ldquo;Restore Encryption on This Device&rdquo;</strong></li>
-                        <li>Enter your <strong>recovery code</strong> and <strong>new password</strong></li>
+                        <li>Enter your <strong>recovery code (6 words)</strong> and <strong>new password</strong></li>
                       </ol>
                       <p style={{ fontSize: "13px", color: "var(--error)", marginTop: "12px", fontWeight: 500 }}>
                         Without your recovery code, your encrypted data is permanently lost. No one can recover it — not even us.
@@ -1874,8 +1884,8 @@ export default function SettingsPage() {
                           <span>Save it in a password manager (1Password, Bitwarden, etc.)</span>
                         </div>
                         <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", fontSize: "14px", color: "var(--text-secondary)" }}>
-                          <span style={{ color: "var(--error)", fontWeight: 700, flexShrink: 0 }}>✗</span>
-                          <span>Don&apos;t screenshot it or save it in Notes app</span>
+                          <span style={{ color: "var(--success)", fontWeight: 700, flexShrink: 0 }}>✓</span>
+                          <span>If you have to save it somewhere on your computer (notes app, as a file), make sure that it&apos;s safe and no one else can access it</span>
                         </div>
                         <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", fontSize: "14px", color: "var(--text-secondary)" }}>
                           <span style={{ color: "var(--error)", fontWeight: 700, flexShrink: 0 }}>✗</span>
@@ -1987,8 +1997,8 @@ export default function SettingsPage() {
                     style={{
                       position: "relative",
                       display: "inline-block",
-                      width: "48px",
-                      height: "24px",
+                      width: "56px",
+                      height: "28px",
                     }}
                   >
                     <input
@@ -2015,16 +2025,29 @@ export default function SettingsPage() {
                         transition: "0.3s",
                         borderRadius: "24px",
                         border: "1px solid var(--border-light)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: messageSoundEnabled ? "flex-start" : "flex-end",
+                        padding: "0 6px",
                       }}
                     >
                       <span
                         style={{
+                          fontSize: "10px",
+                          fontWeight: 600,
+                          color: messageSoundEnabled ? "white" : "var(--text-muted)",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        {messageSoundEnabled ? "On" : "Off"}
+                      </span>
+                      <span
+                        style={{
                           position: "absolute",
-                          content: '""',
-                          height: "18px",
-                          width: "18px",
-                          left: messageSoundEnabled ? "26px" : "3px",
-                          bottom: "2px",
+                          height: "22px",
+                          width: "22px",
+                          left: messageSoundEnabled ? "30px" : "3px",
+                          top: "2px",
                           backgroundColor: "white",
                           transition: "0.3s",
                           borderRadius: "50%",
@@ -2057,8 +2080,8 @@ export default function SettingsPage() {
                     style={{
                       position: "relative",
                       display: "inline-block",
-                      width: "48px",
-                      height: "24px",
+                      width: "56px",
+                      height: "28px",
                     }}
                   >
                     <input
@@ -2087,16 +2110,29 @@ export default function SettingsPage() {
                         transition: "0.3s",
                         borderRadius: "24px",
                         border: "1px solid var(--border-light)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: friendRequestSoundEnabled ? "flex-start" : "flex-end",
+                        padding: "0 6px",
                       }}
                     >
                       <span
                         style={{
+                          fontSize: "10px",
+                          fontWeight: 600,
+                          color: friendRequestSoundEnabled ? "white" : "var(--text-muted)",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        {friendRequestSoundEnabled ? "On" : "Off"}
+                      </span>
+                      <span
+                        style={{
                           position: "absolute",
-                          content: '""',
-                          height: "18px",
-                          width: "18px",
-                          left: friendRequestSoundEnabled ? "26px" : "3px",
-                          bottom: "2px",
+                          height: "22px",
+                          width: "22px",
+                          left: friendRequestSoundEnabled ? "30px" : "3px",
+                          top: "2px",
                           backgroundColor: "white",
                           transition: "0.3s",
                           borderRadius: "50%",

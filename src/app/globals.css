@@ -1243,6 +1243,20 @@ a:hover {
   }
 }
 
+/* Very small screen adjustments (360px and below) */
+@media (max-width: 360px) {
+  .edit-btn-xs {
+    height: 26px !important;
+    padding: 0 var(--space-xs) !important;
+    font-size: 11px !important;
+  }
+  
+  .edit-btn-xs svg {
+    width: 12px !important;
+    height: 12px !important;
+  }
+}
+
 /* Mobile spacing adjustments */
 @media (max-width: 640px) {
   .gap-sm-mobile {

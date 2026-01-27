@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, use, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
+import { Navbar } from "@/components/Navbar";
 import { AvatarCircle } from "@/components/AvatarCircle";
 import { useAuth } from "@/components/AuthGuard";
 import { useToast } from "@/lib/toast";
@@ -542,6 +543,7 @@ export default function EditPersonPage({
 
   return (
     <div className="page">
+      <Navbar />
       <AppHeader
         showBack
         backHref={`/p/${id}/prayers`}

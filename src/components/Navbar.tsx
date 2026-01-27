@@ -121,7 +121,7 @@ export function Navbar({
       {/* Logo / App Name */}
       <div
         className="flex items-center cursor-pointer"
-        style={{ gap: "var(--space-sm)" }}
+        style={{ gap: "var(--space-sm)", marginLeft: "var(--space-sm)" }}
         onClick={() => router.push("/")}
       >
         <div
@@ -295,7 +295,30 @@ export function Navbar({
               </div>
             </div>
 
-            {/* Menu Items - Order: Settings, Messages (mobile only), Friends, ... */}
+            {/* Menu Items - Order: Home, Settings, Messages (mobile only), Friends, ... */}
+            <button
+              className="dropdown-item"
+              onClick={() => {
+                setIsMenuOpen(false);
+                router.push("/");
+              }}
+            >
+              <svg
+                style={{ width: "18px", height: "18px" }}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={1.5}
+                  d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+                />
+              </svg>
+              Home
+            </button>
+
             <button className="dropdown-item" onClick={handleSettings}>
               <svg
                 style={{ width: "18px", height: "18px" }}

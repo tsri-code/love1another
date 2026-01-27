@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
+import { Navbar } from "@/components/Navbar";
 import { useToast } from "@/lib/toast";
 import { getInitials } from "@/lib/utils";
 import { ImageCropper } from "@/components/ImageCropper";
@@ -225,6 +226,7 @@ export default function AddPersonPage() {
 
   return (
     <div className="page">
+      <Navbar />
       <AppHeader
         showBack
         backHref="/"
