@@ -96,6 +96,9 @@ export function Navbar({
     setIsMenuOpen(false);
     if (onOpenMessages) {
       onOpenMessages();
+    } else {
+      // On other pages, redirect to home with messages open
+      router.push("/?openMessages=true");
     }
   };
 

@@ -11,8 +11,27 @@
         color-scheme: light dark;
         supported-color-schemes: light dark;
       }
-      /* Force text visibility in dark mode email clients */
+      /* Dark mode support for all email clients */
       @media (prefers-color-scheme: dark) {
+        .email-body {
+          background-color: #1a1715 !important;
+        }
+        .email-container {
+          background-color: #2a2520 !important;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+        }
+        .email-title, .email-heading {
+          color: #f5f0e8 !important;
+        }
+        .email-text {
+          color: #c4beb4 !important;
+        }
+        .email-muted {
+          color: #8a847a !important;
+        }
+        .email-border {
+          border-color: #3a3530 !important;
+        }
         .otp-code {
           background-color: #1a1a1a !important;
           border-color: #6b8e6b !important;
@@ -22,7 +41,17 @@
           -webkit-text-fill-color: #ffffff !important;
         }
       }
-      /* Fallback for email clients that strip media queries */
+      /* Fallback for Outlook and other clients */
+      [data-ogsc] .email-title,
+      [data-ogsc] .email-heading,
+      [data-ogsb] .email-title,
+      [data-ogsb] .email-heading {
+        color: #f5f0e8 !important;
+      }
+      [data-ogsc] .email-text,
+      [data-ogsb] .email-text {
+        color: #c4beb4 !important;
+      }
       [data-ogsc] .otp-code-text,
       [data-ogsb] .otp-code-text {
         color: #ffffff !important;
@@ -30,15 +59,17 @@
     </style>
   </head>
   <body
+    class="email-body"
     style="
       margin: 0;
       padding: 0;
-      font-family: 'Georgia', 'Times New Roman', serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
       background-color: #f8f6f3;
       color: #1a1a1a;
     "
   >
     <table
+      class="email-body"
       width="100%"
       cellpadding="0"
       cellspacing="0"
@@ -47,6 +78,7 @@
       <tr>
         <td align="center">
           <table
+            class="email-container"
             width="100%"
             cellpadding="0"
             cellspacing="0"
@@ -84,6 +116,7 @@
                   >
                 </div>
                 <h1
+                  class="email-title"
                   style="
                     margin: 0;
                     font-size: 24px;
@@ -101,6 +134,7 @@
             <tr>
               <td style="padding: 0 40px 32px 40px">
                 <h2
+                  class="email-heading"
                   style="
                     margin: 0 0 16px 0;
                     font-size: 20px;
@@ -112,6 +146,7 @@
                   Welcome to the Family! 🎉
                 </h2>
                 <p
+                  class="email-text"
                   style="
                     margin: 0 0 24px 0;
                     font-size: 16px;
@@ -124,6 +159,7 @@
                   to pray for the people you love.
                 </p>
                 <p
+                  class="email-text"
                   style="
                     margin: 0 0 24px 0;
                     font-size: 16px;
@@ -167,6 +203,7 @@
                 </table>
 
                 <p
+                  class="email-text"
                   style="
                     margin: 24px 0 0 0;
                     font-size: 14px;
@@ -183,12 +220,14 @@
             <!-- Footer -->
             <tr>
               <td
+                class="email-border"
                 style="
                   padding: 24px 40px 40px 40px;
                   border-top: 1px solid #e8e4df;
                 "
               >
                 <p
+                  class="email-muted"
                   style="
                     margin: 0 0 8px 0;
                     font-size: 13px;
@@ -200,6 +239,7 @@
                   email.
                 </p>
                 <p
+                  class="email-muted"
                   style="
                     margin: 0;
                     font-size: 13px;
@@ -215,6 +255,7 @@
 
           <!-- Bottom text -->
           <p
+            class="email-muted"
             style="
               margin: 24px 0 0 0;
               font-size: 12px;

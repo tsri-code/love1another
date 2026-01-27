@@ -11,20 +11,47 @@
       color-scheme: light dark;
       supported-color-schemes: light dark;
     }
+    @media (prefers-color-scheme: dark) {
+      .email-body {
+        background-color: #1a1715 !important;
+      }
+      .email-container {
+        background-color: #2a2520 !important;
+      }
+      .email-title, .email-heading {
+        color: #f5f0e8 !important;
+      }
+      .email-text {
+        color: #c4beb4 !important;
+      }
+      .email-muted {
+        color: #8a847a !important;
+      }
+      .email-border {
+        border-color: #3a3530 !important;
+      }
+      .email-tip {
+        background-color: #3a3520 !important;
+        border-color: #b8860b !important;
+      }
+      .email-tip-text {
+        color: #d4c4a0 !important;
+      }
+    }
   </style>
 </head>
-<body style="margin: 0; padding: 0; font-family: 'Georgia', 'Times New Roman', serif; background-color: #f8f6f3; color: #1a1a1a;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8f6f3; padding: 40px 20px;">
+<body class="email-body" style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f8f6f3; color: #1a1a1a;">
+  <table class="email-body" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8f6f3; padding: 40px 20px;">
     <tr>
       <td align="center">
-        <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 480px; background-color: #ffffff; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);">
+        <table class="email-container" width="100%" cellpadding="0" cellspacing="0" style="max-width: 480px; background-color: #ffffff; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);">
           <!-- Header -->
           <tr>
             <td align="center" style="padding: 40px 40px 24px 40px;">
               <div style="width: 64px; height: 64px; background: linear-gradient(135deg, #6b8e6b 0%, #4a6741 100%); border-radius: 16px; margin-bottom: 16px;">
                 <span style="display: block; line-height: 64px; font-size: 28px; text-align: center;">🔐</span>
               </div>
-              <h1 style="margin: 0; font-size: 24px; font-weight: 600; color: #1a1a1a; font-family: Georgia, serif;">
+              <h1 class="email-title" style="margin: 0; font-size: 24px; font-weight: 600; color: #1a1a1a; font-family: Georgia, serif;">
                 Love1Another
               </h1>
             </td>
@@ -33,10 +60,10 @@
           <!-- Content -->
           <tr>
             <td style="padding: 0 40px 32px 40px;">
-              <h2 style="margin: 0 0 16px 0; font-size: 20px; font-weight: 600; color: #1a1a1a; text-align: center;">
+              <h2 class="email-heading" style="margin: 0 0 16px 0; font-size: 20px; font-weight: 600; color: #1a1a1a; text-align: center;">
                 Your Verification Code
               </h2>
-              <p style="margin: 0 0 24px 0; font-size: 16px; line-height: 1.6; color: #4a4a4a; text-align: center;">
+              <p class="email-text" style="margin: 0 0 24px 0; font-size: 16px; line-height: 1.6; color: #4a4a4a; text-align: center;">
                 Enter this code to verify your identity and access your recovery code:
               </p>
 
@@ -53,7 +80,7 @@
                 </tr>
               </table>
 
-              <p style="margin: 24px 0 0 0; font-size: 14px; line-height: 1.6; color: #6a6a6a; text-align: center;">
+              <p class="email-text" style="margin: 24px 0 0 0; font-size: 14px; line-height: 1.6; color: #6a6a6a; text-align: center;">
                 This code will expire in <strong>10 minutes</strong>.
               </p>
             </td>
@@ -62,9 +89,9 @@
           <!-- Security Notice -->
           <tr>
             <td style="padding: 0 40px 32px 40px;">
-              <div style="background-color: #fff8e6; padding: 16px; border-radius: 12px; border-left: 4px solid #b8860b;">
-                <p style="margin: 0; font-size: 13px; color: #6a6a6a; line-height: 1.5;">
-                  <strong style="color: #1a1a1a;">Security tip:</strong> Never share this code with anyone. Love1Another will never ask for your verification code via phone or message.
+              <div class="email-tip" style="background-color: #fff8e6; padding: 16px; border-radius: 12px; border-left: 4px solid #b8860b;">
+                <p class="email-tip-text" style="margin: 0; font-size: 13px; color: #6a6a6a; line-height: 1.5;">
+                  <strong>Security tip:</strong> Never share this code with anyone. Love1Another will never ask for your verification code via phone or message.
                 </p>
               </div>
             </td>
@@ -72,11 +99,11 @@
 
           <!-- Footer -->
           <tr>
-            <td style="padding: 24px 40px 40px 40px; border-top: 1px solid #e8e4df;">
-              <p style="margin: 0 0 8px 0; font-size: 13px; color: #8a8a8a; text-align: center;">
+            <td class="email-border" style="padding: 24px 40px 40px 40px; border-top: 1px solid #e8e4df;">
+              <p class="email-muted" style="margin: 0 0 8px 0; font-size: 13px; color: #8a8a8a; text-align: center;">
                 If you didn't request this code, you can safely ignore this email.
               </p>
-              <p style="margin: 0; font-size: 13px; color: #8a8a8a; text-align: center;">
+              <p class="email-muted" style="margin: 0; font-size: 13px; color: #8a8a8a; text-align: center;">
                 Someone may have entered your email by mistake.
               </p>
             </td>
@@ -84,7 +111,7 @@
         </table>
 
         <!-- Bottom text -->
-        <p style="margin: 24px 0 0 0; font-size: 12px; color: #8a8a8a; text-align: center;">
+        <p class="email-muted" style="margin: 24px 0 0 0; font-size: 12px; color: #8a8a8a; text-align: center;">
           Love1Another • Pray for the people you love
         </p>
       </td>

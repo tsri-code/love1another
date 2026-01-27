@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AvatarCircle } from "@/components/AvatarCircle";
 import { Navbar } from "@/components/Navbar";
 import { VerseCard } from "@/components/VerseCard";
@@ -41,7 +41,17 @@ export default function HomePage() {
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
   const [showProfileHelp, setShowProfileHelp] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const hasCreatedDefaultProfile = useRef(false);
+
+  // Check for openMessages query param (from navbar redirect)
+  useEffect(() => {
+    if (searchParams.get("openMessages") === "true") {
+      setOpenMessages(true);
+      // Clear the query param from URL
+      router.replace("/", { scroll: false });
+    }
+  }, [searchParams, router]);
 
   // Show loading screen while auth is checking
   // This prevents flash of landing page during sign-in
