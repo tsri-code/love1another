@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { AppHeader } from "@/components/AppHeader";
+import { Navbar } from "@/components/Navbar";
 import { useAuth } from "@/components/AuthGuard";
 import { useNotifications } from "@/lib/use-notifications";
 import { useToast } from "@/lib/toast";
@@ -547,6 +548,7 @@ export default function FriendsPage() {
 
   return (
     <div className="page">
+      <Navbar />
       <AppHeader showBack backHref="/" title="Friends" />
 
       <main className="flex-1">

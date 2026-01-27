@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthGuard";
+import { Navbar } from "@/components/Navbar";
 
 const DONATION_AMOUNTS = [5, 10, 25, 50, 100];
 
@@ -63,6 +64,7 @@ export default function DonatePage() {
       className="min-h-screen flex flex-col page"
       style={{ background: "var(--bg-primary)" }}
     >
+      {user && <Navbar />}
       {/* Header with back button */}
       <header
         className="sticky top-0 z-40 bg-[var(--bg-primary)] border-b border-[var(--border-light)]"

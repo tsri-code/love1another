@@ -288,11 +288,15 @@ export function NotificationProvider({
               setPendingFriendRequests((prev) => prev + 1);
               playFriendRequestSound();
               showToast(notification.title, "info");
+              // Dispatch event for Navbar to refresh friend request count
+              window.dispatchEvent(new CustomEvent("refreshFriendRequests"));
               break;
 
             case "friend_accepted":
               playFriendRequestSound();
               showToast(notification.body || "Friend request accepted!", "success");
+              // Dispatch event for Navbar to refresh friend request count
+              window.dispatchEvent(new CustomEvent("refreshFriendRequests"));
               break;
 
             case "group_invite":

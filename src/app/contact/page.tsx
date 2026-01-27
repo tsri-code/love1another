@@ -2,9 +2,12 @@
 
 import { useState } from "react";
 import { AppHeader } from "@/components/AppHeader";
+import { Navbar } from "@/components/Navbar";
+import { useAuth } from "@/components/AuthGuard";
 
 export default function ContactPage() {
   const [isRedirecting, setIsRedirecting] = useState(false);
+  const { user } = useAuth();
 
   const handleContactSupport = () => {
     setIsRedirecting(true);
@@ -17,6 +20,7 @@ export default function ContactPage() {
 
   return (
     <div className="page">
+      {user && <Navbar />}
       <AppHeader
         title="Contact Us"
         showBack={true}
