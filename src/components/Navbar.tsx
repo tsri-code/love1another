@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "./AuthGuard";
+import { useNotifications } from "@/lib/use-notifications";
 import { getInitials } from "@/lib/utils";
 
 interface NavbarProps {
@@ -15,39 +16,15 @@ export function Navbar({
   unreadMessageCount = 0,
 }: NavbarProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [pendingRequestCount, setPendingRequestCount] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const { user, logout } = useAuth();
+  const { pendingFriendRequests } = useNotifications();
 
   const userName = user?.fullName || "User";
   const userEmail = user?.email || "";
   const avatarColor = user?.avatarColor || "#7c9bb8";
   const avatarPath = user?.avatarPath || null;
-
-  // Fetch pending friend request count
-  const fetchPendingCount = useCallback(async () => {
-    if (!user?.id) return;
-
-    try {
-      const res = await fetch("/api/friends?type=pending");
-      if (res.ok) {
-        const data = await res.json();
-        setPendingRequestCount(data.pendingRequests?.length || 0);
-      }
-    } catch (error) {
-      console.error("Error fetching pending requests:", error);
-    }
-  }, [user?.id]);
-
-  // Fetch on mount and periodically
-  useEffect(() => {
-    fetchPendingCount();
-
-    // Refresh every 30 seconds
-    const interval = setInterval(fetchPendingCount, 30000);
-    return () => clearInterval(interval);
-  }, [fetchPendingCount]);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -95,7 +72,7 @@ export function Navbar({
     router.push("/contact");
   };
 
-  const totalNotifications = pendingRequestCount + unreadMessageCount;
+  const totalNotifications = pendingFriendRequests + unreadMessageCount;
 
   return (
     <nav
@@ -178,7 +155,7 @@ export function Navbar({
 
           {/* Notification Badge - Desktop: only friend requests, Mobile: all notifications */}
           {/* Desktop badge (hidden on mobile) - only shows friend request count */}
-          {pendingRequestCount > 0 && (
+          {pendingFriendRequests > 0 && (
             <span
               className="absolute flex items-center justify-center hide-mobile"
               style={{
@@ -194,7 +171,7 @@ export function Navbar({
                 padding: "0 5px",
               }}
             >
-              {pendingRequestCount > 9 ? "9+" : pendingRequestCount}
+              {pendingFriendRequests > 9 ? "9+" : pendingFriendRequests}
             </span>
           )}
           {/* Mobile badge (hidden on desktop) - shows all notifications */}
@@ -354,7 +331,7 @@ export function Navbar({
                 />
               </svg>
               <span className="flex-1">Friends</span>
-              {pendingRequestCount > 0 && (
+              {pendingFriendRequests > 0 && (
                 <span
                   className="flex items-center justify-center"
                   style={{
@@ -368,7 +345,7 @@ export function Navbar({
                     padding: "0 6px",
                   }}
                 >
-                  {pendingRequestCount}
+                  {pendingFriendRequests}
                 </span>
               )}
             </button>
